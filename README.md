@@ -45,7 +45,7 @@ The check reads the TOC through the SDK, applies `AllowLoadGameType` and `Exclud
 
 ### SDK dependency
 
-[`sdk-source.json`](sdk-source.json) pins the source revision of [wow-addon-sdk](https://github.com/Zilvereyes/wow-addon-sdk). On either laptop, check out and build that SDK revision, then bundle its public TOC, XML and SavedVariables APIs into the extension. The SDK owns parsing and source ranges. The extension supplies the client selection, file checks and VS Code diagnostics.
+[`sdk-source.json`](sdk-source.json) pins the source revision of [wow-addon-sdk](https://github.com/Zilvereyes/wow-addon-sdk). On either laptop, check out and build that SDK revision, then bundle its public TOC, XML and SavedVariables APIs into the extension. The SDK owns parsing and source ranges. The extension supplies the client selection, file checks and VS Code diagnostics. See the SDK's [editor consumer contract](https://github.com/Zilvereyes/wow-addon-sdk/blob/151c5e959fada20703a32cb3bc556102cdd31166/docs/EDITOR-CONSUMERS.md) for the API responsibilities.
 
 ```powershell
 git clone https://github.com/Zilvereyes/wow-addon-sdk.git
