@@ -47,7 +47,7 @@ The check reads the TOC through the SDK, applies `AllowLoadGameType` and `Exclud
 
 Run **WoW TOC: Check AddOn** from the Command Palette in a trusted local add-on folder. Open a root-level TOC to check it explicitly. From another editor, the command uses the configured reference manifest, falls back to the SavedVariables manifest, or offers the folder's TOCs for you to choose. It uses the workspace's client and text locale settings and reads the saved files on disk.
 
-The read-only report lists account and per-character SavedVariables, with conditional declarations labelled, followed by active Lua and XML references in traversal order. Nested Includes appear where they occur, and repeat references stay visible. Click a found path to open its file or click the source location at the end of a row to jump to its TOC entry or XML attribute. Missing paths, unverified paths, incomplete XML and Include cycles are labelled in place. The report describes the extension's client-aware file selection and shows how many manifest entries it skipped. It neither runs addon code nor updates SavedVariables.
+The read-only report lists account and per-character SavedVariables, with conditional declarations labelled, followed by active Lua and XML references in traversal order. Nested Includes appear where they occur, and repeat references stay visible. Click a found path to open its file or click the source location at the end of a row to jump to its TOC entry or XML attribute. Missing paths, unverified paths, incomplete XML and Include cycles are labelled in place. The report describes the extension's client-aware file selection and shows how many manifest entries it skipped.
 
 ### SDK dependency
 
