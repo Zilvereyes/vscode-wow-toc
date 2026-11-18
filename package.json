@@ -1,8 +1,8 @@
 {
   "name": "vscode-wow-toc",
   "displayName": "Zilvereyes WoW TOC",
-  "description": "WoW TOC grammar, editor theme, LuaLS SavedVariables sync and XML reference warnings",
-  "version": "0.5.0",
+  "description": "WoW TOC grammar, editor theme, LuaLS SavedVariables sync, file reference warnings and an add-on report",
+  "version": "0.6.0",
   "icon": "images/wow-icon.png",
   "publisher": "zilvereyes",
   "license": "MIT",
@@ -21,6 +21,13 @@
     "addon"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "zilvereyes.wowToc.checkAddon",
+        "title": "Check AddOn",
+        "category": "WoW TOC"
+      }
+    ],
     "languages": [
       {
         "id": "toc",
@@ -64,7 +71,7 @@
           "default": ""
         },
         "zilvereyes.wowToc.xmlReferenceManifest": {
-          "description": "TOC filename in this workspace folder. Checks reachable XML and its Include and Script targets for the selected client.",
+          "description": "TOC filename in this workspace folder. Checks active TOC Lua and XML entries and reachable XML Include and Script targets for the selected client.",
           "scope": "resource",
           "type": "string",
           "default": ""
@@ -111,8 +118,9 @@
     "url": "https://github.com/Zilvereyes/vscode-wow-toc.git"
   },
   "scripts": {
-    "test": "node --test tests/grammar.test.cjs tests/saved-variables.test.cjs tests/theme.test.cjs",
-    "build:sdk": "node build-sdk.cjs"
+    "test": "node --test tests/grammar.test.cjs tests/saved-variables.test.cjs tests/theme.test.cjs tests/file-references.test.cjs",
+    "build:sdk": "node build-sdk.cjs",
+    "package:vsix": "npm exec --yes --package=@vscode/vsce@4.1.1 -- vsce package --no-dependencies"
   },
   "devDependencies": {
     "vscode-oniguruma": "2.0.1",

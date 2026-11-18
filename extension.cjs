@@ -3,7 +3,8 @@ const path = require("node:path");
 const { TextDecoder, TextEncoder } = require("node:util");
 const { generateSavedVariables, generatedHeader } = require("./saved-variables.cjs");
 
-const { findMissingXmlReferences } = require("./xml-references.cjs");
+const { findMissingFileReferences } = require("./xml-references.cjs");
+const { registerAddonCheck } = require("./check-addon.cjs");
 
 const setting = "zilvereyes.wowToc.savedVariablesManifest";
 const xmlSetting = "zilvereyes.wowToc.xmlReferenceManifest";
@@ -72,14 +73,14 @@ function watchXmlReferences(folder, manifest, output) {
         timer = setTimeout(async () => {
             const notes = [];
             try {
-                const results = await findMissingXmlReferences(folder.uri.fsPath, manifestName,
+                const results = await findMissingFileReferences(folder.uri.fsPath, manifestName,
                     require("./dist/sdk.cjs"), message => notes.push(message), settings);
                 if (requested !== revision) return;
                 for (const note of notes) output.appendLine(folder.name + ": " + note);
                 const entries = results.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
                     const { start, end } = reference.target.source.range;
                     const range = new vscode.Range(start.line, start.column, end.line, end.column);
-                    const label = { include: "Include", script: "Script", toc: "TOC XML" }[reference.kind];
+                    const label = { include: "Include", script: "Script", toc: "TOC XML", "toc-lua": "TOC Lua" }[reference.kind];
                     const warning = new vscode.Diagnostic(range,
                         "Missing " + label + " file: " + reference.target.value, vscode.DiagnosticSeverity.Warning);
                     warning.source = "Zilvereyes WoW TOC";
@@ -196,6 +197,7 @@ function activate(context) {
                 event.affectsConfiguration(xmlClient) || event.affectsConfiguration(xmlLocale)) rebuild();
         }),
         { dispose: disposeWatchers });
+    registerAddonCheck(context, { setting, xmlSetting, xmlClient, xmlLocale, selectedManifest });
     rebuild();
 }
 

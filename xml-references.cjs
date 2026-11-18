@@ -1,6 +1,6 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { selectXmlEntries } = require("./toc-client.cjs");
+const { selectTocFileEntries } = require("./toc-client.cjs");
 
 const namespaceUri = "http://www.blizzard.com/wow/ui/";
 const element = localName => ({ namespaceUri, localName });
@@ -43,61 +43,105 @@ async function lookup(root, value, relativeDirectory = ".") {
     }
 }
 
-async function findMissingXmlReferences(directory, manifestName, sdk, report = () => {}, settings = {}) {
+async function inspectAddonSources(directory, manifestName, sdk, settings = {}, { repeatIncludes = true } = {}) {
     const root = await fs.realpath(directory);
     const manifest = await lookup(root, manifestName);
-    if (manifest.status !== "found") return [];
+    const result = { manifestStatus: manifest.status, notes: [], savedVariables: [], files: [], skippedTocEntries: 0 };
+    if (manifest.status !== "found") return result;
+
+    const manifestFile = path.join(directory, manifestName);
     const text = decoder.decode(await fs.readFile(manifest.file));
-    const { metadata, diagnostics } = sdk.parseToc(text, manifest.file);
+    const { metadata, diagnostics } = sdk.parseToc(text, manifestFile);
     if (diagnostics.some(issue => issue.severity === "error")) {
-        report("XML reference check skipped because the selected TOC contains errors.");
-        return [];
+        result.manifestStatus = "invalid";
+        result.notes.push("File reference check skipped because the selected TOC contains errors.");
+        return result;
     }
 
-    const pending = [];
-    const manifestMissing = [];
-    for (const { entry, expanded } of selectXmlEntries(metadata, settings)) {
-        const source = await lookup(root, expanded);
-        if (source.status === "found") pending.push(source.file);
-        if (source.status === "missing") {
-            manifestMissing.push({ kind: "toc", target: { value: expanded, source: entry.source } });
-        }
-    }
+    result.savedVariables = metadata.savedVariableDeclarations;
+    const selected = selectTocFileEntries(metadata, settings);
+    result.skippedTocEntries = metadata.fileEntries.length - selected.length;
+    const expandedXml = new Set();
+    const ancestors = new Set();
+    const xmlCache = new Map();
+    const maxReportEntries = 10000;
 
-    const visited = new Set();
-    const results = manifestMissing.length ? [{ file: path.join(directory, manifestName), missing: manifestMissing }] : [];
-    while (pending.length) {
-        const source = pending.pop();
-        const identity = process.platform === "win32" ? source.toLowerCase() : source;
-        if (visited.has(identity)) continue;
-        visited.add(identity);
-
-        const name = path.relative(root, source);
+    async function readXml(identity, physicalFile, displayFile) {
+        if (xmlCache.has(identity)) return xmlCache.get(identity);
+        const name = path.relative(directory, displayFile);
         let text;
         try {
-            text = decoder.decode(await fs.readFile(source));
+            text = decoder.decode(await fs.readFile(physicalFile));
         } catch (error) {
-            report(name + ": unable to read XML (" + (error.code || error.name) + ").");
-            continue;
+            result.notes.push(name + ": unable to read XML (" + (error.code || error.name) + ").");
+            xmlCache.set(identity, undefined);
+            return undefined;
         }
-        const file = path.join(directory, name);
-        const analysis = sdk.analyzeXml(text, file, { addonId: path.basename(directory), policy });
+        const analysis = sdk.analyzeXml(text, displayFile, { addonId: path.basename(directory), policy });
         if (!analysis.complete) {
-            report(name + ": incomplete XML analysis. See XML diagnostics for syntax or schema issues.");
-            continue;
+            result.notes.push(name + ": incomplete XML analysis. See XML diagnostics for syntax or schema issues.");
         }
-
-        const missing = [];
-        for (const reference of analysis.references) {
-            const target = await lookup(root, reference.target.value, path.dirname(name));
-            if (target.status === "missing") missing.push(reference);
-            if (target.status === "found" && reference.kind === "include" && /\.xml$/i.test(target.file)) {
-                pending.push(target.file);
-            }
-        }
-        if (missing.length) results.push({ file, missing });
+        const references = analysis.complete ? analysis.references : undefined;
+        xmlCache.set(identity, references);
+        return references;
     }
-    return results;
+
+    async function visit(kind, target, relativeDirectory, depth) {
+        if (result.truncated) return;
+        if (repeatIncludes && result.files.length >= maxReportEntries) {
+            result.truncated = true;
+            result.notes.push("Report stopped after " + maxReportEntries + " file references.");
+            return;
+        }
+        const resolved = await lookup(root, target.value, relativeDirectory);
+        const relativeFile = resolved.file && path.relative(root, resolved.file);
+        const file = relativeFile && path.join(directory, relativeFile);
+        const row = { kind, target, file, depth, status: resolved.status };
+        result.files.push(row);
+
+        if (!file || (kind !== "toc" && kind !== "include") || !/\.xml$/i.test(file)) return;
+        const identity = process.platform === "win32" ? resolved.file.toLowerCase() : resolved.file;
+        if (ancestors.has(identity)) {
+            row.status = "cycle";
+            return;
+        }
+        if (!repeatIncludes && expandedXml.has(identity)) return;
+        expandedXml.add(identity);
+        ancestors.add(identity);
+        try {
+            const references = await readXml(identity, resolved.file, file);
+            if (!references) {
+                row.status = "incomplete";
+                return;
+            }
+            for (const reference of references) {
+                if (result.truncated) break;
+                await visit(reference.kind, reference.target, path.dirname(relativeFile), depth + 1);
+            }
+        } finally {
+            ancestors.delete(identity);
+        }
+    }
+
+    for (const { entry, expanded } of selected) {
+        if (result.truncated) break;
+        const kind = /\.xml$/i.test(expanded) ? "toc" : "toc-lua";
+        await visit(kind, { value: expanded, source: entry.source }, ".", 0);
+    }
+    return result;
 }
 
-module.exports = { findMissingXmlReferences };
+async function findMissingFileReferences(directory, manifestName, sdk, report = () => {}, settings = {}) {
+    const result = await inspectAddonSources(directory, manifestName, sdk, settings, { repeatIncludes: false });
+    for (const note of result.notes) report(note);
+    const missingByFile = new Map();
+    for (const { kind, target, status } of result.files) {
+        if (status !== "missing") continue;
+        const list = missingByFile.get(target.source.file) ?? [];
+        list.push({ kind, target });
+        missingByFile.set(target.source.file, list);
+    }
+    return [...missingByFile].map(([file, missing]) => ({ file, missing }));
+}
+
+module.exports = { findMissingFileReferences, inspectAddonSources };
