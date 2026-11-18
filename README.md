@@ -16,7 +16,7 @@ This World of Warcraft addon developer toolset for VS Code includes a .toc file 
 
 Also included is a simple grammar for `.toc` files with support for keywords (like `## Interface`, `## Author` and such) and X-keywords (like `## X-Date`, `## X-Website` and such)
 
-![toc](images/toc.png)
+![WoW TOC Theme showing directives, WoW color escapes, client conditions, and file variables in Preview.toc](images/toc.png)
 
 ## Zilvereyes recovery preview
 
