@@ -13,3 +13,6 @@ rollup.config.js
 tsconfig.json
 tslint.json
 *.vsix
+tests/
+Open-Preview.ps1
+build-sdk.cjs

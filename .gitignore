@@ -1,3 +1,5 @@
 .vscode
 tools
 *.vsix
+node_modules/
+dist/

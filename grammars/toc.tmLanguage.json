@@ -7,137 +7,336 @@
   "uuid": "C22B105F-216F-4779-9E20-7C881A2B0C99",
   "patterns": [
     {
-      "match": "^(##\\s*(\\S+))\\s*(:)\\s*(.*)$",
-      "captures": {
-        "1": {
-          "name": "keyword.tag.toc"
-        },
-        "2": {
-          "name": "keyword.tag.toc",
-          "patterns": [
-            {
-              "match": "[Xx]-[^:]+",
-              "name": "entity.name.tag.custom.toc"
-            },
-            {
-              "match": "(?i)(Title-|Notes-|Category-|)(?-i)(enUS|enCN|enGB|enTW|frFR|deDE|esES|esMX|itIT|ptBR|ptPT|ruRU|koKR|zhTW|zhCN)",
-              "name": "entity.name.tag.localized.toc"
-            },
-            {
-              "match": "(?i)(Interface|Title|Notes|RequiredDeps|\\bDep[^:]*|OptionalDeps|LoadOnDemand|LoadWith|LoadManagers|AllowLoadGameType|SavedVariablesPerCharacter|SavedVariables|LoadSavedVariablesFirst|DefaultState|Author|Version|AddonCompartmentFunc(OnEnter|OnLeave)?|IconAtlas|IconTexture|Category|Group|AllowAddOnTableAccess)",
-              "name": "entity.name.tag.toc"
-            },
-            {
-              "match": "(?i)(AllowLoad|OnlyBetaAndPTR|SavedVariablesMachine|Secure|LoadFirst|UseSecureEnvironment)",
-              "name": "entity.name.tag.restricted.toc"
-            },
-            {
-              "match": "\\S[^:]+",
-              "name": "invalid.tag.toc"
-            }
-          ]
-        },
-        "3": {
-          "name": "punctuation.separator.key-value"
-        },
-        "4": {
-          "name": "string.value.toc",
-          "patterns": [
-            {
-              "match": "(\\|c)([a-fA-F0-9]{8})",
-              "captures": {
-                "1": {
-                  "name": "constant.character.escape.toc"
-                },
-                "2": {
-                  "name": "string.escape.coloring.toc"
-                }
-              }
-            },
-            {
-              "match": "(\\|r)",
-              "name": "constant.character.escape.toc"
-            },
-            {
-              "match": "@.*?@",
-              "name": "constant.other.packager.toc"
-            }
-          ]
-        }
-      }
+      "include": "#X-directive"
     },
     {
-      "match": "#.*$",
-      "name": "comment.toc"
+      "include": "#locale-directive"
     },
     {
-      "name": "entity.name.file.toc",
-      "begin": "^(?!#)\\s*(?=[\\w\\[])",
-      "end": "\\n",
-      "patterns": [
-        {
-          "include": "#inline-conditional-directive"
-        },
-        {
-          "include": "#inline-variable-directive"
-        }
-      ]
+      "include": "#metadata-valid"
     },
     {
-      "match": "@.*?@",
-      "name": "constant.other.packager.toc"
+      "include": "#metadata-restricted"
+    },
+    {
+      "include": "#metadata-invalid"
+    },
+    {
+      "match": "^#.*$",
+      "name": "comment.line.number-sign.toc"
+    },
+    {
+      "include": "#filepath"
     }
   ],
   "repository": {
-    "inline-conditional-directive": {
-      "comment": "Inline file-specific conditional loading directive using [Directive ...]",
-      "match": "\\[(\\w+)(\\s+)([^\\]]*)\\]",
-      "name": "keyword.tag.toc",
-      "captures": {
+    "X-directive": {
+      "begin": "^(##)\\s*([Xx]-[^:\\s]+)\\s*(:)",
+      "beginCaptures": {
         "1": {
-          "name": "keyword.tag.toc",
-          "patterns": [
-            {
-              "match": "(?i)(AllowLoadGameType)",
-              "name": "entity.name.tag.toc"
-            },
-            {
-              "match": "(?i)(AllowLoad)",
-              "name": "entity.name.tag.restricted.toc"
-            },
-            {
-              "match": ".+",
-              "name": "invalid.tag.toc"
-            }
-          ]
+          "name": "punctuation.definition.metadata.toc"
         },
         "2": {
-          "name": "punctuation.separator.key-value"
+          "name": "entity.name.tag.custom.toc"
         },
         "3": {
-          "name": "string.escape.coloring.toc"
+          "name": "punctuation.separator.key-value.toc"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#metadata-value"
+        }
+      ]
+    },
+    "locale-directive": {
+      "begin": "^(##)\\s*((?i:Title|Notes|Category))(-)((?i:enUS|enCN|enGB|enTW|frFR|deDE|esES|esMX|itIT|ptBR|ptPT|ruRU|koKR|zhTW|zhCN))\\s*(:)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.metadata.toc"
+        },
+        "2": {
+          "name": "entity.name.tag.toc"
+        },
+        "3": {
+          "name": "entity.name.tag.localized-code.toc"
+        },
+        "4": {
+          "name": "entity.name.tag.localized-code.toc"
+        },
+        "5": {
+          "name": "punctuation.separator.key-value.toc"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#metadata-value"
+        }
+      ]
+    },
+    "metadata-valid": {
+      "begin": "^(##)\\s*((?i:Interface|(?:Title|Notes|Category)|Author|Version|Group|IconTexture|IconAtlas|AddonCompartmentFunc(?:OnEnter|OnLeave)?|LoadOnDemand|Dependencies|RequiredDeps|Deps|OptionalDeps|LoadWith|LoadManagers|AllowLoadGameType|OnlyBetaAndPTR|DefaultState|LoadSavedVariablesFirst|SavedVariables(?:PerCharacter)?|AllowAddOnTableAccess))\\s*(:)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.metadata.toc"
+        },
+        "2": {
+          "name": "entity.name.tag.toc"
+        },
+        "3": {
+          "name": "punctuation.separator.key-value.toc"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#metadata-value"
+        }
+      ]
+    },
+    "metadata-restricted": {
+      "begin": "^(##)\\s*((?i:AllowLoad|EscalateErrorDuringLoad|LoadFirst|SavedVariablesMachine|UseSecureEnvironment|Secure))\\s*(:)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.metadata.toc"
+        },
+        "2": {
+          "name": "entity.name.tag.restricted.toc"
+        },
+        "3": {
+          "name": "punctuation.separator.key-value.toc"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#metadata-value"
+        }
+      ]
+    },
+    "wow-newline": {
+      "match": "\\|n",
+      "name": "constant.character.escape.toc"
+    },
+    "metadata-value": {
+      "patterns": [
+        {
+          "include": "#wow-color"
+        },
+        {
+          "include": "#wow-item-quality"
+        },
+        {
+          "include": "#wow-global-color"
+        },
+        {
+          "include": "#wow-texture"
+        },
+        {
+          "include": "#wow-atlas"
+        },
+        {
+          "include": "#wow-newline"
+        },
+        {
+          "include": "#packager-variable"
+        },
+        {
+          "match": "[^|@\\r\\n]+",
+          "name": "string.value.toc"
+        }
+      ]
+    },
+    "wow-color": {
+      "begin": "\\|c([A-Fa-f0-9]{8})",
+      "beginCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        },
+        "1": {
+          "name": "constant.numeric.hex.toc"
+        }
+      },
+      "end": "\\|r|$",
+      "endCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        }
+      },
+      "contentName": "string.value.toc"
+    },
+    "wow-global-color": {
+      "begin": "\\|cn([A-Za-z0-9_]+):",
+      "beginCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        },
+        "1": {
+          "name": "support.constant.globalcolor.toc"
+        }
+      },
+      "end": "\\|r|$",
+      "endCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        }
+      },
+      "contentName": "string.value.toc"
+    },
+    "wow-item-quality": {
+      "begin": "\\|cnIQ([0-9]+):",
+      "beginCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        },
+        "1": {
+          "name": "constant.numeric.itemquality.toc"
+        }
+      },
+      "end": "\\|r|$",
+      "endCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        }
+      },
+      "contentName": "string.value.toc"
+    },
+    "wow-texture": {
+      "begin": "\\|T",
+      "beginCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        }
+      },
+      "end": "\\|t|$",
+      "endCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        }
+      },
+      "patterns": [
+        {
+          "match": ":",
+          "name": "constant.character.path.separator.good.toc"
+        },
+        {
+          "match": "\\\\\\\\",
+          "name": "constant.character.path.separator.good.toc"
+        },
+        {
+          "match": "/",
+          "name": "invalid.path.separator.toc"
+        },
+        {
+          "match": "\\\\",
+          "name": "invalid.illegal.single-backslash.toc"
+        },
+        {
+          "match": "(?<=:)[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?=:|\\|t|$)",
+          "name": "constant.numeric.texture.toc"
+        },
+        {
+          "match": "[^:\\\\|/\\s]+",
+          "name": "support.constant.texture.toc"
+        }
+      ]
+    },
+    "wow-atlas": {
+      "begin": "\\|A",
+      "beginCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        }
+      },
+      "end": "\\|a|$",
+      "endCaptures": {
+        "0": {
+          "name": "constant.character.escape.toc"
+        }
+      },
+      "patterns": [
+        {
+          "match": ":",
+          "name": "constant.character.path.separator.good.toc"
+        },
+        {
+          "match": "[0-9.-]+",
+          "name": "constant.numeric.texture.toc"
+        },
+        {
+          "match": "[A-Za-z0-9_-]+",
+          "name": "string.unquoted.atlas-name.toc"
+        }
+      ]
+    },
+    "metadata-invalid": {
+      "begin": "^(##)\\s*([^\\s:]+)\\s*(?=:)",
+      "beginCaptures": {
+        "1": {
+          "name": "invalid.illegal.metadata-marker.toc"
+        },
+        "2": {
+          "name": "invalid.illegal.directive.toc"
+        }
+      },
+      "contentName": "invalid.illegal.directive.toc",
+      "end": "$"
+    },
+    "filepath": {
+      "begin": "^(?!#)(?=[^\\r\\n]+)",
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#conditional-directive"
+        },
+        {
+          "include": "#file-variable"
+        },
+        {
+          "include": "#packager-variable"
+        },
+        {
+          "match": "(?i:\\.xml)\\b",
+          "name": "storage.type.xml.toc"
+        },
+        {
+          "match": "(?i:\\.lua)\\b",
+          "name": "storage.type.lua.toc"
+        },
+        {
+          "match": "\\\\",
+          "name": "constant.character.path.separator.good.toc"
+        },
+        {
+          "match": "/",
+          "name": "invalid.path.separator.toc"
+        },
+        {
+          "match": "[^\\\\/\\s.\\[\\]@]+",
+          "name": "entity.name.file.toc"
+        }
+      ]
+    },
+    "conditional-directive": {
+      "match": "\\[\\s*((?i:AllowLoadGameType|AllowLoadTextLocale))\\s+([^\\]\\r\\n]*[^\\]\\s])\\s*\\]",
+      "captures": {
+        "1": {
+          "name": "keyword.tag.conditional.toc"
+        },
+        "2": {
+          "name": "string.unquoted.conditional-value.toc"
         }
       }
     },
-    "inline-variable-directive": {
-      "comment": "Inline variable expansion using [...]",
-      "match": "\\[(\\w+)\\]",
-      "name": "keyword.tag.toc",
-      "captures": {
-        "1": {
-          "name": "keyword.tag.toc",
-          "patterns": [
-            {
-              "match": "(?i)(Family|Game)",
-              "name": "entity.name.tag.variable.toc"
-            },
-            {
-              "match": "\\S[^:]+",
-              "name": "invalid.tag.toc"
-            }
-          ]
-        }
-      }
+    "file-variable": {
+      "match": "\\[\\s*((?i:Family|Game|TextLocale))\\s*\\]",
+      "name": "entity.name.tag.variable.toc"
+    },
+    "packager-variable": {
+      "match": "@[^@\\s]+@",
+      "name": "constant.other.packager.toc"
     }
   }
 }
