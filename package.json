@@ -1,17 +1,13 @@
 {
   "name": "vscode-wow-toc",
-  "displayName": "WoW TOC",
-  "description": "World of Warcraft TOC Language Support",
-  "version": "0.1.1",
+  "displayName": "Zilvereyes WoW TOC",
+  "description": "WoW TOC grammar, editor theme, LuaLS SavedVariables sync and XML reference warnings",
+  "version": "0.5.0",
   "icon": "images/wow-icon.png",
-  "publisher": "stanzilla",
+  "publisher": "zilvereyes",
   "license": "MIT",
-  "galleryBanner": {
-    "color": "#FFFFFF",
-    "theme": "light"
-  },
   "engines": {
-    "vscode": "^1.28.0"
+    "vscode": "^1.74.0"
   },
   "categories": [
     "Programming Languages"
@@ -32,7 +28,7 @@
           ".toc"
         ],
         "aliases": [
-          "Toc",
+          "WoW TOC",
           "TOC"
         ],
         "configuration": "./language-configuration.json"
@@ -50,18 +46,87 @@
         "language": "toc",
         "path": "./snippets/toc.json"
       }
-    ]
+    ],
+    "themes": [
+      {
+        "label": "WoW TOC Theme",
+        "uiTheme": "vs-dark",
+        "path": "./themes/wow-toc-color-theme.json"
+      }
+    ],
+    "configuration": {
+      "title": "Zilvereyes WoW TOC",
+      "properties": {
+        "zilvereyes.wowToc.savedVariablesManifest": {
+          "description": "TOC filename in the workspace root. When set, this generates Editor/LuaLS/SavedVariables.lua for LuaLS.",
+          "scope": "resource",
+          "type": "string",
+          "default": ""
+        },
+        "zilvereyes.wowToc.xmlReferenceManifest": {
+          "description": "TOC filename in this workspace folder. Checks reachable XML and its Include and Script targets for the selected client.",
+          "scope": "resource",
+          "type": "string",
+          "default": ""
+        },
+        "zilvereyes.wowToc.xmlReferenceClient": {
+          "description": "WoW client used for TOC game-type conditions and Family/Game file variables.",
+          "scope": "resource",
+          "type": "string",
+          "default": "",
+          "enum": [
+            "",
+            "retail",
+            "classic-era",
+            "tbc-classic",
+            "wrath-classic",
+            "cataclysm-classic",
+            "mists-classic"
+          ],
+          "enumDescriptions": [
+            "Unspecified",
+            "Retail (Standard)",
+            "Classic Era (Vanilla)",
+            "Burning Crusade Classic",
+            "Wrath Classic",
+            "Cataclysm Classic",
+            "Mists Classic"
+          ]
+        },
+        "zilvereyes.wowToc.xmlReferenceTextLocale": {
+          "description": "WoW text locale for TOC conditions and file variables, for example enUS. Leave empty if unknown.",
+          "scope": "resource",
+          "type": "string",
+          "default": "",
+          "pattern": "^([a-z]{2}[A-Z]{2})?$"
+        }
+      }
+    }
   },
   "bugs": {
-    "url": "https://github.com/Stanzilla/vscode-wow-toc/issues"
+    "url": "https://github.com/Zilvereyes/vscode-wow-toc/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Stanzilla/vscode-wow-toc/"
+    "url": "https://github.com/Zilvereyes/vscode-wow-toc.git"
   },
-  "__metadata": {
-    "id": "ac5501ba-517a-40a9-ac23-a211c9178280",
-    "publisherId": "5e25d1f4-c74e-4dca-88b9-c4b196edad16",
-    "publisherDisplayName": "Stanzilla"
+  "scripts": {
+    "test": "node --test tests/grammar.test.cjs tests/saved-variables.test.cjs tests/theme.test.cjs",
+    "build:sdk": "node build-sdk.cjs"
+  },
+  "devDependencies": {
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.0",
+    "esbuild": "0.25.12",
+    "jsonc-parser": "3.3.1"
+  },
+  "main": "./extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
   }
 }

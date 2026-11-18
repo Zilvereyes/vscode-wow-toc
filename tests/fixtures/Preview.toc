@@ -1,0 +1,18 @@
+## Interface: 11509
+## Title: Zilvereyes WoW TOC Preview
+## Title-deDE: Zilvereyes-Vorschau
+## X-Website: https://example.org
+## SavedVariables: ZUI, LoadingOrderSavedVar
+## RequiredDeps: AddonCore
+## Secure: 1
+## MadeUpDirective: invalid metadata example
+## Version: @project-version@
+## Notes: |cFF66CCFFColour|r |cnGREEN_FONT_COLOR:Named|r |cnIQ3:Rare|r|nNext line
+## Notes: |TInterface\\AddOns\\Example\\Icon:16:24|t |A:common-icon-checkmark:16:24|a
+
+# Compatibility and filename examples
+[AllowLoadGameType classic] Modules\Classic-[Family].lua
+Modules\Locale-[TextLocale].xml [AllowLoadTextLocale enUS]
+[Game]\Core.lua
+Libs/Broken.lua
+[UnknownVariable]\Example.lua

@@ -1,0 +1,193 @@
+{
+  "name": "WoW TOC Theme",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#121314",
+    "editor.foreground": "#D4D4D4"
+  },
+  "tokenColors": [
+    {
+      "name": "Metadata ## marker",
+      "scope": [
+        "source.toc punctuation.definition.metadata.toc",
+        "source.toc keyword.tag.toc.header.valid",
+        "source.toc keyword.control.metadata.toc"
+      ],
+      "settings": {
+        "foreground": "#66CCFF"
+      }
+    },
+    {
+      "name": "Valid metadata directives",
+      "scope": [
+        "source.toc entity.name.tag.toc",
+        "source.toc entity.name.tag.restricted.toc",
+        "source.toc entity.name.directive.toc",
+        "source.toc entity.name.directive.restricted.toc"
+      ],
+      "settings": {
+        "foreground": "#99FF99"
+      }
+    },
+    {
+      "name": "Custom X- directives",
+      "scope": [
+        "source.toc entity.name.tag.custom.toc",
+        "source.toc entity.name.directive.custom.toc"
+      ],
+      "settings": {
+        "foreground": "#4A7DFF"
+      }
+    },
+    {
+      "name": "Locale suffixes",
+      "scope": [
+        "source.toc entity.name.tag.localized-code.toc",
+        "source.toc entity.name.directive.locale.toc"
+      ],
+      "settings": {
+        "foreground": "#4A7DFF"
+      }
+    },
+    {
+      "name": "Metadata separators",
+      "scope": [
+        "source.toc punctuation.separator.key-value.toc",
+        "source.toc punctuation.separator.texture.toc"
+      ],
+      "settings": {
+        "foreground": "#66CCFF"
+      }
+    },
+    {
+      "name": "Metadata values",
+      "scope": [
+        "source.toc string.metadata.value.toc",
+        "source.toc string.value.toc"
+      ],
+      "settings": {
+        "foreground": "#FFD966"
+      }
+    },
+    {
+      "name": "Conditional directives",
+      "scope": [
+        "source.toc entity.name.tag.variable.toc",
+        "source.toc keyword.tag.conditional.toc",
+        "source.toc string.unquoted.conditional-value.toc"
+      ],
+      "settings": {
+        "foreground": "#66CCFF"
+      }
+    },
+    {
+      "name": "File paths",
+      "scope": [
+        "source.toc entity.name.file.toc"
+      ],
+      "settings": {
+        "foreground": "#FFFFFF"
+      }
+    },
+    {
+      "name": "File extensions",
+      "scope": [
+        "source.toc storage.type.lua.toc",
+        "source.toc storage.type.xml.toc",
+        "source.toc entity.name.file.extension.toc"
+      ],
+      "settings": {
+        "foreground": "#66CCFF"
+      }
+    },
+    {
+      "name": "Valid path separators",
+      "scope": [
+        "source.toc constant.character.path.separator.good.toc",
+        "source.toc constant.character.path-separator.toc",
+        "source.toc constant.character.path-separator.valid-ui.toc"
+      ],
+      "settings": {
+        "foreground": "#C586C0"
+      }
+    },
+    {
+      "name": "UI escape sequences",
+      "scope": [
+        "source.toc constant.character.escape.toc",
+        "source.toc constant.numeric.hex.toc",
+        "source.toc support.constant.globalcolor.toc",
+        "source.toc constant.numeric.itemquality.toc",
+        "source.toc support.constant.texture.toc",
+        "source.toc constant.character.escape.wow.toc"
+      ],
+      "settings": {
+        "foreground": "#66CCFF"
+      }
+    },
+    {
+      "name": "Texture and atlas numeric values",
+      "scope": [
+        "source.toc constant.numeric.texture.toc"
+      ],
+      "settings": {
+        "foreground": "#66CCFF"
+      }
+    },
+    {
+      "name": "Atlas names",
+      "scope": [
+        "source.toc string.unquoted.atlas-name.toc"
+      ],
+      "settings": {
+        "foreground": "#66CCFF"
+      }
+    },
+    {
+      "name": "Packager variables",
+      "scope": [
+        "source.toc constant.other.packager.toc"
+      ],
+      "settings": {
+        "foreground": "#FFD966"
+      }
+    },
+    {
+      "name": "Comments",
+      "scope": [
+        "source.toc comment.line.number-sign.toc",
+        "source.toc comment.line.double-dash.toc",
+        "source.toc comment.line.trailing.toc"
+      ],
+      "settings": {
+        "foreground": "#6A9955",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "name": "Invalid metadata",
+      "scope": [
+        "source.toc invalid.illegal.metadata-marker.toc",
+        "source.toc invalid.illegal.directive.toc",
+        "source.toc keyword.tag.toc.header.invalid",
+        "source.toc invalid.illegal.metadata.toc"
+      ],
+      "settings": {
+        "foreground": "#F44747"
+      }
+    },
+    {
+      "name": "Invalid slash usage",
+      "scope": [
+        "source.toc invalid.path.separator.toc",
+        "source.toc invalid.illegal.forward-slash.toc",
+        "source.toc invalid.illegal.single-backslash.toc"
+      ],
+      "settings": {
+        "foreground": "#F44747"
+      }
+    }
+  ],
+  "include": "./base/dark_plus.json",
+  "semanticHighlighting": true
+}
