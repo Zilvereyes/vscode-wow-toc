@@ -1,0 +1,113 @@
+name: Build and attach WoW TOC 0.5.0 VSIX
+
+on:
+  push:
+    branches: [release/v0.5.0-vsix]
+    paths: [.github/workflows/attach-vsix-0.5.0.yml]
+
+permissions: {}
+
+env:
+  RELEASE_COMMIT: 4fa303a7c46c27be0fff7c1688a6febbb5d9e118
+  SDK_COMMIT: 7b01bd0511fbe651d1234848f73140c9d012c2a9
+  RELEASE_TAG: v0.5.0
+  VSIX_NAME: zilvereyes.vscode-wow-toc-0.5.0.vsix
+
+jobs:
+  build:
+    name: Build and test the pinned master source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_COMMIT }}
+          path: extension
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: Zilvereyes/wow-addon-sdk
+          ref: ${{ env.SDK_COMMIT }}
+          path: sdk
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: microsoft/vscode
+          ref: 69047191fc427f2f92828279aae1d90d8eeda7ab
+          path: editor
+          sparse-checkout: |
+            extensions/lua
+            extensions/xml
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            extension/package-lock.json
+            sdk/package-lock.json
+      - name: Verify the extension version and SDK lock
+        working-directory: extension
+        run: |
+          test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
+          test "$(node -p 'require("./package.json").version')" = "${RELEASE_TAG#v}"
+          test "$(node -p 'require("./sdk-source.json").version')" = 0.7.0
+          test "$(node -p 'require("./sdk-source.json").revision')" = "$SDK_COMMIT"
+      - name: Build the SDK from source
+        working-directory: sdk
+        run: |
+          test "$(git rev-parse HEAD)" = "$SDK_COMMIT"
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Bundle and test the extension
+        working-directory: extension
+        env:
+          WOW_VSCODE_BUILTINS: ${{ github.workspace }}/editor/extensions
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build:sdk -- ../sdk
+          npm test
+      - name: Package the VSIX and compute its SHA-256
+        working-directory: extension
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          npx --yes --package '@vscode/vsce@3.7.1' vsce package --no-dependencies --allow-missing-repository --out "$RUNNER_TEMP/release-assets/$VSIX_NAME"
+          cd "$RUNNER_TEMP/release-assets"
+          sha256sum "$VSIX_NAME" | tee "$VSIX_NAME.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wow-toc-vsix
+          path: ${{ runner.temp }}/release-assets
+          if-no-files-found: error
+
+  publish:
+    name: Attach the verified package to the GitHub Release
+    needs: build
+    if: github.repository == 'Zilvereyes/vscode-wow-toc' && github.ref == 'refs/heads/release/v0.5.0-vsix'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: wow-toc-vsix
+          path: release-assets
+      - name: Verify and publish the release assets
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum -c "$VSIX_NAME.sha256"
+          cat > release-notes.md <<EOF
+          Install the attached VSIX with **Extensions → Install from VSIX…** in VS Code. Use the same file on both laptops. The accompanying SHA-256 file verifies the package.
+
+          Version 0.5.0 adds client-aware TOC file selection, nested XML reference checks and LuaLS SavedVariables synchronization.
+
+          - Extension source [\`$RELEASE_COMMIT\`](https://github.com/Zilvereyes/vscode-wow-toc/commit/$RELEASE_COMMIT)
+          - SDK source [0.7.0 at \`$SDK_COMMIT\`](https://github.com/Zilvereyes/wow-addon-sdk/commit/$SDK_COMMIT)
+          - [Release build and tests](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)
+          EOF
+          gh release create "$RELEASE_TAG" "$VSIX_NAME" "$VSIX_NAME.sha256" \
+            --repo "$GITHUB_REPOSITORY" --target "$RELEASE_COMMIT" \
+            --title 'Zilvereyes WoW TOC 0.5.0' --notes-file release-notes.md --latest
