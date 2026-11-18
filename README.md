@@ -27,7 +27,7 @@ Run `.\Open-Preview.ps1` from this worktree. It opens `Preview.toc` with **WoW T
 - Use **Developer: Inspect Editor Tokens and Scopes** in the preview to verify the color and scope of an individual token.
 
 The grammar starts from the recovered VS Code snapshot `RsU4.json` from 15 June 2026. Conditional and file variable rules come from the earlier `toc.tmLanguage.json` download and have separate scopes inside file entries. The reconstructed theme uses the 17 TOC rules in the historical settings snapshot `XfkR.json`, mapped to the merged grammar’s scopes. The backup also contains the earlier theme palette in `Rl5B.json`. These tests cover editor highlighting. The game client interprets directives according to its build.
-## XML file reference warnings
+## TOC and XML file reference warnings
 
 Set these workspace settings for the add-on you are editing:
 
@@ -41,7 +41,13 @@ Set these workspace settings for the add-on you are editing:
 
 The manifest is explicit. Select `classic-era` for Classic Era (Vanilla) or `retail` for Retail (Standard). The settings picker also lists the supported Classic expansions. Set the optional text locale when the add-on uses locale restrictions or `[TextLocale]`.
 
-The check reads the TOC through the SDK, applies `AllowLoadGameType` and `ExcludeLoadGameType` on the manifest and its file lines, and supports inline `AllowLoadTextLocale` and `AllowLoad` for the in-game editor context. It expands `[Family]`, `[Game]` and `[TextLocale]` in TOC XML paths. Unknown client or locale conditions, unsupported conditions and unresolved variables suppress diagnostics for their affected entries. The XML walk follows `Include` recursively and resolves literal `Include` and `Script` paths from the referring XML file. Missing XML selected by the TOC is reported on its TOC line. A missing XML reference target is marked on the value of the referring XML `file` attribute. The Problems panel refreshes on client changes and when relevant files are created, removed or saved. The [TOC format reference](https://warcraft.wiki.gg/wiki/TOC_format) describes the loading directives and file variables.
+The check reads the TOC through the SDK, applies `AllowLoadGameType` and `ExcludeLoadGameType` on the manifest and its file lines, and supports inline `AllowLoadTextLocale` and `AllowLoad` for the in-game editor context. It expands `[Family]`, `[Game]` and `[TextLocale]` in TOC Lua and XML paths. Unknown client or locale conditions, unsupported conditions and unresolved variables suppress diagnostics for their affected entries. The XML walk follows `Include` recursively and resolves literal `Include` and `Script` paths from the referring XML file. Missing Lua or XML selected by the TOC is reported on its TOC line. A missing XML reference target is marked on the value of the referring XML `file` attribute. The Problems panel refreshes on client changes and when relevant files are created, removed or saved. The [TOC format reference](https://warcraft.wiki.gg/wiki/TOC_format) describes the loading directives and file variables.
+
+### Check AddOn
+
+Run **WoW TOC: Check AddOn** from the Command Palette in a trusted local add-on folder. Open a root-level TOC to check it explicitly. From another editor, the command uses the configured reference manifest, falls back to the SavedVariables manifest, or offers the folder's TOCs for you to choose. It uses the workspace's client and text locale settings and reads the saved files on disk.
+
+The read-only report lists account and per-character SavedVariables, with conditional declarations labelled, followed by active Lua and XML references in traversal order. Nested Includes appear where they occur, and repeat references stay visible. Click a found path to open its file or click the source location at the end of a row to jump to its TOC entry or XML attribute. Missing paths, unverified paths, incomplete XML and Include cycles are labelled in place. The report describes the extension's client-aware file selection and shows how many manifest entries it skipped. It neither runs addon code nor updates SavedVariables.
 
 ### SDK dependency
 

@@ -28,7 +28,7 @@ function isActive(condition, family, game, locale) {
     return name === "allowloadgametype" ? matches : !matches;
 }
 
-function selectXmlEntries(metadata, { client, textLocale }) {
+function selectTocFileEntries(metadata, { client, textLocale }) {
     const [family, game] = clients.get(client) ?? [];
     const locale = typeof textLocale === "string" && localePattern.test(textLocale) ? textLocale : undefined;
 
@@ -54,10 +54,10 @@ function selectXmlEntries(metadata, { client, textLocale }) {
         if (!entry.conditions.every(condition => isActive(condition, family, game, locale))) continue;
         const expanded = entry.path.replace(/\[([A-Za-z][A-Za-z0-9_]*)\]/g,
             (raw, token) => variables.get(token) ?? raw);
-        if (/\.xml$/i.test(expanded) && !/[\[\]]/.test(expanded)) selected.push({ entry, expanded });
+        if (/\.(?:lua|xml)$/i.test(expanded) && !/[\[\]]/.test(expanded)) selected.push({ entry, expanded });
     }
     return selected;
 }
 
-module.exports = { selectXmlEntries };
+module.exports = { selectTocFileEntries };
 

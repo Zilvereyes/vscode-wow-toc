@@ -75,10 +75,13 @@ exports.run = async () => {
         "PilotClient\\Future.xml [AllowLoadGameType unknown-future]",
         "PilotClient\\[Unresolved]\\Variable.xml",
         "PilotClient\\[Family]\\MissingSeed.xml [AllowLoadGameType vanilla, standard]",
+        "PilotClient\\[Family]\\Startup.lua [AllowLoadGameType vanilla]",
+        "PilotClient\\[Unknown]\\Unresolved.lua",
     ].join("\r\n")+"\r\n";
     const selected = originalToc.toString("utf8")+"\r\n"+appended;
     const era = ["Missing Script file: EraFamilyMissing.lua", "Missing Script file: EraConditionMissing.lua",
-        "Missing TOC XML file: PilotClient\\Classic\\MissingSeed.xml"];
+        "Missing TOC XML file: PilotClient\\Classic\\MissingSeed.xml",
+        "Missing TOC Lua file: PilotClient\\Classic\\Startup.lua"];
     const retail = ["Missing Script file: RetailFamilyMissing.lua", "Missing Script file: RetailConditionMissing.lua"];
 
     try {
@@ -98,6 +101,14 @@ exports.run = async () => {
         assert.equal(eraWarnings.find(issue=>issue.message.includes("EraFamilyMissing")).file,path.join("PilotClient","Classic","Family.xml"));
         assert.equal(eraWarnings.find(issue=>issue.message.includes("EraFamilyMissing")).line,2);
         assert.equal(eraWarnings.find(issue=>issue.message.includes("TOC XML")).file,tocName);
+        const lua = eraWarnings.find(issue => issue.message.includes("TOC Lua"));
+        const luaLine = selected.split(/\r?\n/).findIndex(line => line.includes("Startup.lua")) + 1;
+        assert.deepEqual([lua.file, lua.line, lua.column], [tocName, luaLine, 1]);
+        const startup = path.join(root, "PilotClient", "Classic", "Startup.lua");
+        await fs.writeFile(startup, "return\n");
+        await waitForWarnings(era.filter(message => message !== lua.message), "TOC Lua warning clears on creation");
+        await fs.unlink(startup);
+        await waitForWarnings(era, "TOC Lua warning returns on deletion");
         await vscode.window.showTextDocument(vscode.Uri.file(path.join(root,"PilotClient","Classic","Family.xml")));
         await showEvidence("before",{...context,client:"classic-era",warnings:eraWarnings});
 
