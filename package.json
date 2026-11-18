@@ -2,7 +2,7 @@
   "name": "vscode-wow-toc",
   "displayName": "Zilvereyes WoW TOC",
   "description": "WoW TOC grammar, editor theme, LuaLS SavedVariables sync, file reference warnings and an add-on report",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "icon": "images/wow-icon.png",
   "publisher": "zilvereyes",
   "license": "MIT",
@@ -119,7 +119,8 @@
   },
   "scripts": {
     "test": "node --test tests/grammar.test.cjs tests/saved-variables.test.cjs tests/theme.test.cjs tests/file-references.test.cjs",
-    "build:sdk": "node build-sdk.cjs"
+    "build:sdk": "node build-sdk.cjs",
+    "package:vsix": "npm exec --yes --package=@vscode/vsce@4.1.1 -- vsce package --no-dependencies"
   },
   "devDependencies": {
     "vscode-oniguruma": "2.0.1",

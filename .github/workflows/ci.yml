@@ -56,3 +56,11 @@ jobs:
         env:
           WOW_VSCODE_BUILTINS: ${{ github.workspace }}/.ci/vscode/extensions
         run: npm test
+      - name: Verify the packaged SDK
+        if: runner.os == 'Linux'
+        run: |
+          artifact="$RUNNER_TEMP/wow-toc-ci.vsix"
+          npm run package:vsix -- --out "$artifact"
+          unzip -p "$artifact" extension/dist/sdk.cjs | cmp - dist/sdk.cjs
+          unzip -p "$artifact" extension/dist/SDK-LICENSE.txt | cmp - dist/SDK-LICENSE.txt
+          unzip -p "$artifact" extension/check-addon.cjs | cmp - check-addon.cjs

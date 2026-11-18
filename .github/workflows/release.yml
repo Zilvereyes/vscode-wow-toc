@@ -3,7 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - "*"
+      - "v*"
+
+permissions:
+  contents: read
 
 jobs:
   release:
@@ -11,16 +14,37 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-      - name: Setup Node
-        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
           cache: npm
-      - run: npm install
-
-      - name: Release Plugin
-        uses: lannonbr/vsce-action@4.0.0
-        env:
-          PUBLISHER_TOKEN: ${{ secrets.PUBLISHER_TOKEN }}
+      - name: Check the release tag
+        run: test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
+      - name: Read the SDK source pin
+        id: sdk
+        run: node -p '"revision=" + require("./sdk-source.json").revision' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
         with:
-          args: publish -p $PUBLISHER_TOKEN
+          repository: Zilvereyes/wow-addon-sdk
+          ref: ${{ steps.sdk.outputs.revision }}
+          path: .ci/wow-addon-sdk
+          persist-credentials: false
+      - name: Build the pinned SDK bundle
+        run: |
+          npm --prefix .ci/wow-addon-sdk ci --ignore-scripts --no-audit --no-fund
+          npm --prefix .ci/wow-addon-sdk run build
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build:sdk -- .ci/wow-addon-sdk
+      - name: Package and verify the VSIX
+        run: |
+          artifact="$RUNNER_TEMP/wow-toc.vsix"
+          npm run package:vsix -- --out "$artifact"
+          unzip -p "$artifact" extension/dist/sdk.cjs | cmp - dist/sdk.cjs
+          unzip -p "$artifact" extension/dist/SDK-LICENSE.txt | cmp - dist/SDK-LICENSE.txt
+          unzip -p "$artifact" extension/check-addon.cjs | cmp - check-addon.cjs
+      - name: Publish verified VSIX
+        env:
+          VSCE_PAT: ${{ secrets.PUBLISHER_TOKEN }}
+        run: npm exec --yes --package=@vscode/vsce@4.1.1 -- vsce publish --packagePath "$RUNNER_TEMP/wow-toc.vsix"

@@ -39,7 +39,7 @@ exports.run = async () => {
     assert.ok(root && expected);
     assert.equal(await fs.realpath(root), await fs.realpath(expected));
     const extension = vscode.extensions.getExtension("zilvereyes.vscode-wow-toc");
-    assert.equal(extension?.packageJSON.version, "0.5.0");
+    assert.equal(extension?.packageJSON.version, require("../package.json").version);
     await extension.activate();
     const config = () => vscode.workspace.getConfiguration("zilvereyes.wowToc",folder.uri);
     const set = (key,value) => config().update(key,value,vscode.ConfigurationTarget.Workspace);
