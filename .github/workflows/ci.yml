@@ -1,0 +1,56 @@
+name: Extension tests
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Read the SDK source pin
+        id: sdk
+        shell: bash
+        run: node -p '"revision=" + require("./sdk-source.json").revision' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          repository: Zilvereyes/wow-addon-sdk
+          ref: ${{ steps.sdk.outputs.revision }}
+          path: .ci/wow-addon-sdk
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: microsoft/vscode
+          ref: 69047191fc427f2f92828279aae1d90d8eeda7ab
+          path: .ci/vscode
+          sparse-checkout: |
+            extensions/lua
+            extensions/xml
+          persist-credentials: false
+      - name: Build pinned SDK
+        run: |
+          npm --prefix .ci/wow-addon-sdk ci --ignore-scripts --no-audit --no-fund
+          npm --prefix .ci/wow-addon-sdk run build
+      - name: Build the extension SDK bundle
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build:sdk -- .ci/wow-addon-sdk
+      - name: Run the extension tests
+        env:
+          WOW_VSCODE_BUILTINS: ${{ github.workspace }}/.ci/vscode/extensions
+        run: npm test
