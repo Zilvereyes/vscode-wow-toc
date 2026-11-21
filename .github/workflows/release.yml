@@ -47,4 +47,9 @@ jobs:
       - name: Publish verified VSIX
         env:
           VSCE_PAT: ${{ secrets.PUBLISHER_TOKEN }}
-        run: npm exec --yes --package=@vscode/vsce@4.1.1 -- vsce publish --packagePath "$RUNNER_TEMP/wow-toc.vsix"
+        run: |
+          if [[ -z "$VSCE_PAT" ]]; then
+            echo "::error::PUBLISHER_TOKEN is unavailable. Configure the token for the zilvereyes Marketplace publisher before retrying."
+            exit 1
+          fi
+          npm exec --yes --package=@vscode/vsce@4.1.1 -- vsce publish --packagePath "$RUNNER_TEMP/wow-toc.vsix"

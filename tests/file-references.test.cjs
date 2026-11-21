@@ -3,7 +3,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
-const { findMissingFileReferences, inspectAddonSources } = require("../xml-references.cjs");
+const { findFileReferenceProblems, inspectAddonSources } = require("../xml-references.cjs");
 const sdk = require("../dist/sdk.cjs");
 
 test("checks active Lua entries in the manifest without traversing them as XML", async t => {
@@ -16,13 +16,13 @@ test("checks active Lua entries in the manifest without traversing them as XML",
     await fs.writeFile(manifest, [
         "## Interface: 11508",
         "Existing.lua",
-        "[Family]\\Startup.LUA [AllowLoadGameType vanilla]",
+        "[AllowLoadGameType vanilla] [AllowLoad game]\t[Family]\\Startup.LUA",
         "[Unresolved]\\Unknown.lua",
-        "Foreign.lua [AllowLoadGameType unknown-future]",
+        "[AllowLoadGameType unknown-future] Foreign.lua",
         "Missing.xml",
         "",
     ].join("\n"));
-    const check = (client, report) => findMissingFileReferences(root, name, sdk, report, { client });
+    const check = async (client, report) => (await findFileReferenceProblems(root, name, sdk, report, { client })).missingByFile;
     const notes = [];
     const [initial] = await check("classic-era", note => notes.push(note));
     assert.equal(initial.file, manifest);
@@ -72,7 +72,52 @@ test("reports Includes at their reference position and keeps repeated references
     ];
     assert.deepEqual(result.files.map(row => [row.target.value, row.status, row.depth]),
         [...branch, ...branch, ["After.lua", "found", 0]]);
-    const [missing] = await findMissingFileReferences(root, "Demo.toc", sdk, undefined, settings);
+    const { missingByFile: [missing] } = await findFileReferenceProblems(root, "Demo.toc", sdk, undefined, settings);
     assert.equal(path.basename(missing.file), "Child.xml");
     assert.deepEqual(missing.missing.map(reference => reference.target.value), ["Missing.lua"]);
+});
+
+test("normalizes prefixed XML paths while preserving unprefixed whitespace", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-prefix-xml-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    await fs.writeFile(path.join(root, "Demo.toc"), [
+        "  [AllowLoadGameType vanilla] Root [Classic].xml",
+        "[AllowLoadGameType vanilla] Root.xml",
+        " Root.xml [AllowLoadGameType vanilla]",
+        " Root.xml",
+    ].join("\r\n"));
+    await fs.writeFile(path.join(root, "Root.xml"),
+        '<Ui xmlns="http://www.blizzard.com/wow/ui/"><Script file="Missing.lua"/></Ui>');
+    const era = await inspectAddonSources(root, "Demo.toc", sdk, { client: "classic-era" });
+    assert.deepEqual(era.files.map(row => [row.target.value, row.status]), [
+        ["Root.xml", "found"], ["Missing.lua", "missing"],
+        [" Root.xml", "unverifiable"], [" Root.xml", "unverifiable"],
+    ]);
+    assert.equal(era.skippedTocEntries, 1);
+});
+
+test("returns the TOC parser error range and suppresses derived file warnings until the TOC is fixed", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-parse-error-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const name = "Fixture.toc";
+    const manifest = path.join(root, name);
+    const invalid = "## Title [Unrecognized]: Test";
+    const lines = ["## Interface: 11509", invalid, "[AllowLoadGameType vanilla] Missing.lua"];
+    const check = () => findFileReferenceProblems(root, name, sdk, undefined, { client: "classic-era" });
+    await fs.writeFile(manifest, lines.join("\r\n"));
+    const { missingByFile, parserErrors: [issue, ...others] } = await check();
+    assert.deepEqual(missingByFile, []);
+    assert.deepEqual(others, []);
+    assert.equal(issue.code, "TOC0001");
+    assert.equal(issue.severity, "error");
+    assert.equal(issue.source.file, manifest);
+    assert.deepEqual(issue.source.range, {
+        start: { line: 1, column: invalid.indexOf("[") },
+        end: { line: 1, column: invalid.indexOf("]") + 1 },
+    });
+    lines[1] = "## Title: Test";
+    await fs.writeFile(manifest, lines.join("\r\n"));
+    const repaired = await check();
+    assert.deepEqual(repaired.parserErrors, []);
+    assert.equal(repaired.missingByFile[0].missing[0].target.value, "Missing.lua");
 });
