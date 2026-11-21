@@ -28,7 +28,7 @@ function isActive(condition, family, game, locale) {
     return name === "allowloadgametype" ? matches : !matches;
 }
 
-function selectTocFileEntries(metadata, { client, textLocale }) {
+function selectTocFileEntries({ metadata, entries }, { client, textLocale }) {
     const [family, game] = clients.get(client) ?? [];
     const locale = typeof textLocale === "string" && localePattern.test(textLocale) ? textLocale : undefined;
 
@@ -50,9 +50,14 @@ function selectTocFileEntries(metadata, { client, textLocale }) {
 
     const variables = new Map([["Family", family], ["Game", game], ["TextLocale", locale]]);
     const selected = [];
-    for (const entry of metadata.fileEntries) {
+    for (const { kind, fileEntry: entry, raw } of entries) {
+        if (kind !== "file") continue;
         if (!entry.conditions.every(condition => isActive(condition, family, game, locale))) continue;
-        const expanded = entry.path.replace(/\[([A-Za-z][A-Za-z0-9_]*)\]/g,
+        const firstCondition = entry.conditions[0];
+        // The SDK removes the condition itself but retains whitespace before and after it.
+        const hasPrefix = firstCondition && raw.slice(0, firstCondition.source.range.start.column).trim() === "";
+        const filePath = hasPrefix ? entry.path.trimStart() : entry.path;
+        const expanded = filePath.replace(/\[([A-Za-z][A-Za-z0-9_]*)\]/g,
             (raw, token) => variables.get(token) ?? raw);
         if (/\.(?:lua|xml)$/i.test(expanded) && !/[\[\]]/.test(expanded)) selected.push({ entry, expanded });
     }

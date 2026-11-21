@@ -3,7 +3,7 @@ const path = require("node:path");
 const { TextDecoder, TextEncoder } = require("node:util");
 const { generateSavedVariables, generatedHeader } = require("./saved-variables.cjs");
 
-const { findMissingFileReferences } = require("./xml-references.cjs");
+const { findFileReferenceProblems } = require("./xml-references.cjs");
 const { registerAddonCheck } = require("./check-addon.cjs");
 
 const setting = "zilvereyes.wowToc.savedVariablesManifest";
@@ -73,11 +73,11 @@ function watchXmlReferences(folder, manifest, output) {
         timer = setTimeout(async () => {
             const notes = [];
             try {
-                const results = await findMissingFileReferences(folder.uri.fsPath, manifestName,
+                const { missingByFile, parserErrors } = await findFileReferenceProblems(folder.uri.fsPath, manifestName,
                     require("./dist/sdk.cjs"), message => notes.push(message), settings);
                 if (requested !== revision) return;
                 for (const note of notes) output.appendLine(folder.name + ": " + note);
-                const entries = results.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
+                const entries = missingByFile.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
                     const { start, end } = reference.target.source.range;
                     const range = new vscode.Range(start.line, start.column, end.line, end.column);
                     const label = { include: "Include", script: "Script", toc: "TOC XML", "toc-lua": "TOC Lua" }[reference.kind];
@@ -87,6 +87,16 @@ function watchXmlReferences(folder, manifest, output) {
                     warning.code = "WOWTOC001";
                     return warning;
                 })]);
+                if (parserErrors.length) {
+                    entries.push([manifest, parserErrors.map(issue => {
+                        const { start, end } = issue.source.range;
+                        const range = new vscode.Range(start.line, start.column, end.line, end.column);
+                        const diagnostic = new vscode.Diagnostic(range, issue.message, vscode.DiagnosticSeverity.Error);
+                        diagnostic.source = "Zilvereyes WoW TOC";
+                        diagnostic.code = issue.code;
+                        return diagnostic;
+                    })]);
+                }
                 const current = new Set(entries.map(([uri]) => uri.toString()));
                 diagnostics.forEach(uri => {
                     if (!current.has(uri.toString())) entries.push([uri, undefined]);
