@@ -55,7 +55,7 @@ The read-only report lists account and per-character SavedVariables, with condit
 
 ```powershell
 git clone https://github.com/Zilvereyes/wow-addon-sdk.git
-git -C wow-addon-sdk switch --detach 7b01bd0511fbe651d1234848f73140c9d012c2a9
+git -C wow-addon-sdk switch --detach af12ebfaee634459ca8c6db6de0aadf42ee31f19
 npm --prefix wow-addon-sdk ci
 npm --prefix wow-addon-sdk run build
 
