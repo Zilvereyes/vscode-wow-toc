@@ -2,7 +2,7 @@
   "name": "vscode-wow-toc",
   "displayName": "Zilvereyes WoW TOC",
   "description": "WoW TOC grammar, editor theme, LuaLS SavedVariables sync, file reference warnings and an add-on report",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "icon": "images/wow-icon.png",
   "publisher": "zilvereyes",
   "license": "MIT",
