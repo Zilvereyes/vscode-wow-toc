@@ -46,21 +46,22 @@ async function lookup(root, value, relativeDirectory = ".") {
 async function inspectAddonSources(directory, manifestName, sdk, settings = {}, { repeatIncludes = true } = {}) {
     const root = await fs.realpath(directory);
     const manifest = await lookup(root, manifestName);
-    const result = { manifestStatus: manifest.status, notes: [], savedVariables: [], files: [], skippedTocEntries: 0 };
+    const result = { manifestStatus: manifest.status, notes: [], parserErrors: [], savedVariables: [], files: [], skippedTocEntries: 0 };
     if (manifest.status !== "found") return result;
 
     const manifestFile = path.join(directory, manifestName);
     const text = decoder.decode(await fs.readFile(manifest.file));
-    const { metadata, diagnostics } = sdk.parseToc(text, manifestFile);
-    if (diagnostics.some(issue => issue.severity === "error")) {
+    const parsed = sdk.parseToc(text, manifestFile);
+    result.parserErrors = parsed.diagnostics.filter(issue => issue.severity === "error");
+    if (result.parserErrors.length) {
         result.manifestStatus = "invalid";
         result.notes.push("File reference check skipped because the selected TOC contains errors.");
         return result;
     }
 
-    result.savedVariables = metadata.savedVariableDeclarations;
-    const selected = selectTocFileEntries(metadata, settings);
-    result.skippedTocEntries = metadata.fileEntries.length - selected.length;
+    result.savedVariables = parsed.metadata.savedVariableDeclarations;
+    const selected = selectTocFileEntries(parsed, settings);
+    result.skippedTocEntries = parsed.metadata.fileEntries.length - selected.length;
     const expandedXml = new Set();
     const ancestors = new Set();
     const xmlCache = new Map();
@@ -131,7 +132,7 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
     return result;
 }
 
-async function findMissingFileReferences(directory, manifestName, sdk, report = () => {}, settings = {}) {
+async function findFileReferenceProblems(directory, manifestName, sdk, report = () => {}, settings = {}) {
     const result = await inspectAddonSources(directory, manifestName, sdk, settings, { repeatIncludes: false });
     for (const note of result.notes) report(note);
     const missingByFile = new Map();
@@ -141,7 +142,10 @@ async function findMissingFileReferences(directory, manifestName, sdk, report = 
         list.push({ kind, target });
         missingByFile.set(target.source.file, list);
     }
-    return [...missingByFile].map(([file, missing]) => ({ file, missing }));
+    return {
+        missingByFile: [...missingByFile].map(([file, missing]) => ({ file, missing })),
+        parserErrors: result.parserErrors,
+    };
 }
 
-module.exports = { findMissingFileReferences, inspectAddonSources };
+module.exports = { findFileReferenceProblems, inspectAddonSources };

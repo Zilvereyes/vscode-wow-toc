@@ -1,9 +1,10 @@
 const vscode = require("vscode");
 const path = require("node:path");
+const { randomUUID } = require("node:crypto");
 const { TextDecoder, TextEncoder } = require("node:util");
 const { generateSavedVariables, generatedHeader } = require("./saved-variables.cjs");
 
-const { findMissingFileReferences } = require("./xml-references.cjs");
+const { findFileReferenceProblems } = require("./xml-references.cjs");
 const { registerAddonCheck } = require("./check-addon.cjs");
 
 const setting = "zilvereyes.wowToc.savedVariablesManifest";
@@ -28,14 +29,16 @@ async function updateEditorGlobals(folder, manifest, output) {
     const result = generateSavedVariables(manifest.fsPath, source, require("./dist/sdk.cjs"));
     const library = vscode.Uri.joinPath(folder.uri, "Editor", "LuaLS");
     const target = vscode.Uri.joinPath(library, "SavedVariables.lua");
-    let previous;
+    let previousBytes;
     try {
-        previous = decoder.decode(await vscode.workspace.fs.readFile(target));
+        previousBytes = await vscode.workspace.fs.readFile(target);
     } catch (error) {
         if (error.code !== "FileNotFound") throw error;
     }
-    if (previous === result.text) return;
-    if (previous !== undefined && !previous.startsWith(generatedHeader)) {
+    const previous = previousBytes === undefined ? undefined : decoder.decode(previousBytes);
+    const normalized = previous?.replace(/\r\n/g, "\n");
+    if (normalized === result.text) return;
+    if (normalized !== undefined && !normalized.startsWith(generatedHeader)) {
         throw new Error("Editor/LuaLS/SavedVariables.lua already contains a hand-written file.");
     }
     if (previous === undefined) {
@@ -44,10 +47,17 @@ async function updateEditorGlobals(folder, manifest, output) {
     } else {
         // LuaLS's default workspace diagnostics refresh on a Lua document save.
         const document = await vscode.workspace.openTextDocument(target);
-        if (document.isDirty || document.getText() !== previous) {
+        if (document.isDirty || document.getText().replace(/\r\n/g, "\n") !== normalized) {
             throw new Error("The generated editor file changed during synchronization.");
         }
-        const range = new vscode.Range(document.positionAt(0), document.positionAt(previous.length));
+        const version = document.version;
+        const backup = target.with({ path: target.path + "." + randomUUID() + ".bak" });
+        await vscode.workspace.fs.copy(target, backup, { overwrite: false });
+        const disk = await vscode.workspace.fs.readFile(target);
+        if (document.isDirty || document.version !== version || !Buffer.from(disk).equals(previousBytes)) {
+            throw new Error("The generated editor file changed during synchronization.");
+        }
+        const range = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
         const edit = new vscode.WorkspaceEdit();
         edit.replace(target, range, result.text);
         if (!await vscode.workspace.applyEdit(edit) || !await document.save()) {
@@ -73,11 +83,11 @@ function watchXmlReferences(folder, manifest, output) {
         timer = setTimeout(async () => {
             const notes = [];
             try {
-                const results = await findMissingFileReferences(folder.uri.fsPath, manifestName,
+                const { missingByFile, parserErrors } = await findFileReferenceProblems(folder.uri.fsPath, manifestName,
                     require("./dist/sdk.cjs"), message => notes.push(message), settings);
                 if (requested !== revision) return;
                 for (const note of notes) output.appendLine(folder.name + ": " + note);
-                const entries = results.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
+                const entries = missingByFile.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
                     const { start, end } = reference.target.source.range;
                     const range = new vscode.Range(start.line, start.column, end.line, end.column);
                     const label = { include: "Include", script: "Script", toc: "TOC XML", "toc-lua": "TOC Lua" }[reference.kind];
@@ -87,6 +97,16 @@ function watchXmlReferences(folder, manifest, output) {
                     warning.code = "WOWTOC001";
                     return warning;
                 })]);
+                if (parserErrors.length) {
+                    entries.push([manifest, parserErrors.map(issue => {
+                        const { start, end } = issue.source.range;
+                        const range = new vscode.Range(start.line, start.column, end.line, end.column);
+                        const diagnostic = new vscode.Diagnostic(range, issue.message, vscode.DiagnosticSeverity.Error);
+                        diagnostic.source = "Zilvereyes WoW TOC";
+                        diagnostic.code = issue.code;
+                        return diagnostic;
+                    })]);
+                }
                 const current = new Set(entries.map(([uri]) => uri.toString()));
                 diagnostics.forEach(uri => {
                     if (!current.has(uri.toString())) entries.push([uri, undefined]);
