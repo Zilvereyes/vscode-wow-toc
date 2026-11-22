@@ -1,5 +1,6 @@
 const vscode = require("vscode");
 const path = require("node:path");
+const { randomUUID } = require("node:crypto");
 const { TextDecoder, TextEncoder } = require("node:util");
 const { generateSavedVariables, generatedHeader } = require("./saved-variables.cjs");
 
@@ -28,14 +29,16 @@ async function updateEditorGlobals(folder, manifest, output) {
     const result = generateSavedVariables(manifest.fsPath, source, require("./dist/sdk.cjs"));
     const library = vscode.Uri.joinPath(folder.uri, "Editor", "LuaLS");
     const target = vscode.Uri.joinPath(library, "SavedVariables.lua");
-    let previous;
+    let previousBytes;
     try {
-        previous = decoder.decode(await vscode.workspace.fs.readFile(target));
+        previousBytes = await vscode.workspace.fs.readFile(target);
     } catch (error) {
         if (error.code !== "FileNotFound") throw error;
     }
-    if (previous === result.text) return;
-    if (previous !== undefined && !previous.startsWith(generatedHeader)) {
+    const previous = previousBytes === undefined ? undefined : decoder.decode(previousBytes);
+    const normalized = previous?.replace(/\r\n/g, "\n");
+    if (normalized === result.text) return;
+    if (normalized !== undefined && !normalized.startsWith(generatedHeader)) {
         throw new Error("Editor/LuaLS/SavedVariables.lua already contains a hand-written file.");
     }
     if (previous === undefined) {
@@ -44,10 +47,17 @@ async function updateEditorGlobals(folder, manifest, output) {
     } else {
         // LuaLS's default workspace diagnostics refresh on a Lua document save.
         const document = await vscode.workspace.openTextDocument(target);
-        if (document.isDirty || document.getText() !== previous) {
+        if (document.isDirty || document.getText().replace(/\r\n/g, "\n") !== normalized) {
             throw new Error("The generated editor file changed during synchronization.");
         }
-        const range = new vscode.Range(document.positionAt(0), document.positionAt(previous.length));
+        const version = document.version;
+        const backup = target.with({ path: target.path + "." + randomUUID() + ".bak" });
+        await vscode.workspace.fs.copy(target, backup, { overwrite: false });
+        const disk = await vscode.workspace.fs.readFile(target);
+        if (document.isDirty || document.version !== version || !Buffer.from(disk).equals(previousBytes)) {
+            throw new Error("The generated editor file changed during synchronization.");
+        }
+        const range = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
         const edit = new vscode.WorkspaceEdit();
         edit.replace(target, range, result.text);
         if (!await vscode.workspace.applyEdit(edit) || !await document.save()) {
