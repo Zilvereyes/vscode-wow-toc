@@ -222,16 +222,12 @@
           "name": "constant.character.path.separator.good.toc"
         },
         {
-          "match": "\\\\\\\\",
+          "match": "\\\\",
           "name": "constant.character.path.separator.good.toc"
         },
         {
           "match": "/",
           "name": "invalid.path.separator.toc"
-        },
-        {
-          "match": "\\\\",
-          "name": "invalid.illegal.single-backslash.toc"
         },
         {
           "match": "(?<=:)[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?=:|\\|t|$)",

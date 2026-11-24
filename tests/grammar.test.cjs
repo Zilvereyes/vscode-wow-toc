@@ -63,6 +63,7 @@ test("conditions and file variables work in the same file entry", () => {
     expectScope(suffix, "enUS", "string.unquoted.conditional-value.toc");
     expectScope("Docs/Core.lua", "/", "invalid.path.separator.toc");
     expectScope("Docs\\Core.lua", "\\", "constant.character.path.separator.good.toc");
+    expectScope("\\", "\\", "constant.character.path.separator.good.toc");
     expectScope("[Other]\\Core.lua", "Other", "entity.name.file.toc");
     expectScope("## Notes: [Game] and [AllowLoadGameType classic]", "[Game]", "string.value.toc");
 });
@@ -73,9 +74,11 @@ test("WoW colors, texture and atlas tokens coexist without leaking to the next l
     expectScope(line, "GREEN_FONT_COLOR", "support.constant.globalcolor.toc");
     expectScope(line, "3:Rare", "constant.numeric.itemquality.toc");
     expectScope(line, "|n", "constant.character.escape.toc");
-    const media = "## Notes: |TInterface\\\\Icons\\\\Foo:16:24|t |A:common-icon-checkmark:16:24|a";
+    const media = "## Notes: |TInterface\\Icons\\Foo:16:24|t |A:common-icon-checkmark:16:24|a";
+    expectScope(media, "\\", "constant.character.path.separator.good.toc");
     expectScope(media, "Foo", "support.constant.texture.toc");
     expectScope(media, "16:24", "constant.numeric.texture.toc");
+    expectScope("## Notes: |TInterface/Icons/Foo:16:24|t", "/", "invalid.path.separator.toc");
     expectScope(media, "common-icon-checkmark", "string.unquoted.atlas-name.toc");
     expectScope(media, "|a", "constant.character.escape.toc");
     const state = expectScope("## Notes: |cFF66CCFFunfinished", "unfinished", "string.value.toc");
@@ -106,7 +109,9 @@ test("theme contributes the recovered TOC palette to emitted scopes", () => {
         ["## Title-deDE: ZilverUI", "deDE", "#4A7DFF"],
         ["## Invalid: value", "##", "#F44747"],
         ["Libs\\Core-[Family].lua", "\\", "#C586C0"],
+        ["\\", "\\", "#C586C0"],
         ["Libs\\Core-[Family].lua", "Family", "#66CCFF"],
+        ["## Notes: |TInterface\\Icons\\Foo:16:24|t", "\\", "#C586C0"],
     ]) {
         const column = line.indexOf(word);
         const { tokens } = grammar.tokenizeLine2(line, INITIAL);
