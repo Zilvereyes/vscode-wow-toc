@@ -38,6 +38,8 @@ test("valid and invalid metadata use separate markers", () => {
     expectScope("## RequiredDeps: Core", "RequiredDeps", "entity.name.tag.toc");
     expectScope("## Secure: 1", "Secure", "entity.name.tag.restricted.toc");
     expectScope("## NotAField: example", "##", "invalid.illegal.metadata-marker.toc");
+    expectScope("## Husk at jeg skal være rød!", "##", "invalid.illegal.metadata-marker.toc");
+    expectScope("## Husk at jeg skal være rød!", "Husk", "invalid.illegal.metadata.toc");
     expectScope("# Normal comment", "#", "comment.line.number-sign.toc");
 });
 
@@ -94,6 +96,7 @@ test("theme contributes the recovered TOC palette to emitted scopes", () => {
     for (const [scope, value] of Object.entries({
         "punctuation.definition.metadata.toc": "#66CCFF",
         "invalid.illegal.metadata-marker.toc": "#F44747",
+        "invalid.illegal.metadata.toc": "#F44747",
         "entity.name.tag.toc": "#99FF99",
         "entity.name.tag.variable.toc": "#66CCFF",
         "entity.name.tag.localized-code.toc": "#4A7DFF",
