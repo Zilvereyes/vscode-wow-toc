@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const vscode = require("vscode");
 
 exports.run = async () => {
-    const id = "zilvereyes.vscode-wow-toc";
+    const id = "zilvereyes.wow-addon-toc";
     const extension = vscode.extensions.getExtension(id);
     assert.ok(extension, "VS Code must discover " + id);
     const theme = extension.packageJSON.contributes.themes.find(item => item.label === "WoW TOC Theme");

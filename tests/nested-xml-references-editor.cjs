@@ -35,7 +35,7 @@ exports.run = async () => {
     const expected = process.env.WOW_TOC_XML_TEST_FIXTURE;
     assert.ok(root && expected, "Specify the disposable ZilverUI copy");
     assert.equal(await fs.realpath(root), await fs.realpath(expected), "Use the disposable ZilverUI copy");
-    const extension = vscode.extensions.getExtension("zilvereyes.vscode-wow-toc");
+    const extension = vscode.extensions.getExtension("zilvereyes.wow-addon-toc");
     assert.ok(extension);
     await extension.activate();
 
