@@ -24,7 +24,7 @@ exports.run = async () => {
         assert.ok(expected);
         assert.equal(await fs.realpath(root), await fs.realpath(expected));
 
-        const extension = vscode.extensions.getExtension("zilvereyes.vscode-wow-toc");
+        const extension = vscode.extensions.getExtension("zilvereyes.wow-addon-toc");
         assert.ok(extension);
         await extension.activate();
         const toc = vscode.Uri.joinPath(folder.uri, "!~ZilverUI.toc");
