@@ -22,6 +22,9 @@
       "include": "#metadata-invalid"
     },
     {
+      "include": "#metadata-missing-separator"
+    },
+    {
       "match": "^#.*$",
       "name": "comment.line.number-sign.toc"
     },
@@ -278,6 +281,16 @@
         }
       },
       "contentName": "invalid.illegal.directive.toc",
+      "end": "$"
+    },
+    "metadata-missing-separator": {
+      "begin": "^(##)(?![^\\r\\n]*:)",
+      "beginCaptures": {
+        "1": {
+          "name": "invalid.illegal.metadata-marker.toc"
+        }
+      },
+      "contentName": "invalid.illegal.metadata.toc",
       "end": "$"
     },
     "filepath": {
