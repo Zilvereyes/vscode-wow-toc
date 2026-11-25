@@ -76,15 +76,20 @@ function watchXmlReferences(folder, manifest, output) {
     const settings = { client: configuration.get(xmlClient), textLocale: configuration.get(xmlLocale) };
     let timer;
     let revision = 0;
+    let controller;
 
     function schedule() {
         const requested = ++revision;
         clearTimeout(timer);
+        controller?.abort();
+        const currentController = new AbortController();
+        controller = currentController;
         timer = setTimeout(async () => {
             const notes = [];
             try {
                 const { missingByFile, parserErrors } = await findFileReferenceProblems(folder.uri.fsPath, manifestName,
-                    require("./dist/sdk.cjs"), message => notes.push(message), settings);
+                    require("./dist/sdk.cjs"), message => notes.push(message), settings,
+                    { signal: currentController.signal });
                 if (requested !== revision) return;
                 for (const note of notes) output.appendLine(folder.name + ": " + note);
                 const entries = missingByFile.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
@@ -116,6 +121,8 @@ function watchXmlReferences(folder, manifest, output) {
                 if (requested !== revision) return;
                 diagnostics.clear();
                 output.appendLine(folder.name + ": " + error.message);
+            } finally {
+                if (controller === currentController) controller = undefined;
             }
         }, 200);
     }
@@ -138,6 +145,8 @@ function watchXmlReferences(folder, manifest, output) {
         dispose() {
             ++revision;
             clearTimeout(timer);
+            controller?.abort();
+            controller = undefined;
             for (const event of events) event.dispose();
             watcher.dispose();
             diagnostics.dispose();

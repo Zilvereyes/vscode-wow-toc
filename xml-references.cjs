@@ -21,36 +21,53 @@ function relativeParts(value) {
     return parts.filter(part => part !== ".");
 }
 
-async function lookup(root, value, relativeDirectory = ".") {
+function checkCancellation(signal) {
+    if (!signal?.aborted) return;
+    const error = new Error("XML reference check cancelled.");
+    error.name = "AbortError";
+    throw error;
+}
+
+async function lookup(root, value, relativeDirectory = ".", signal) {
+    checkCancellation(signal);
     const parts = relativeParts(value);
     if (!parts?.length) return { status: "unverifiable" };
     // References are relative to the XML file. Recheck the entire path from the add-on root.
     const segments = [...relativeDirectory.split(path.sep).filter(part => part !== "."), ...parts];
     let current = root;
     for (const [index, part] of segments.entries()) {
+        checkCancellation(signal);
         current = path.join(current, part);
+        let item;
         try {
-            const item = await fs.lstat(current);
-            // A link can change path resolution or leave the selected add-on.
-            if (item.isSymbolicLink()) return { status: "unverifiable" };
-            if (index === segments.length - 1) {
-                return item.isFile() ? { status: "found", file: current } : { status: "unverifiable" };
-            }
-            if (!item.isDirectory()) return { status: "unverifiable" };
+            item = await fs.lstat(current, { bigint: true });
         } catch (error) {
             return { status: error.code === "ENOENT" ? "missing" : "unverifiable" };
         }
+        checkCancellation(signal);
+        // A link can change path resolution or leave the selected add-on.
+        if (item.isSymbolicLink()) return { status: "unverifiable" };
+        if (index === segments.length - 1) {
+            // Device and inode collapse path aliases to one physical-file identity on every platform.
+            return item.isFile()
+                ? { status: "found", file: current, identity: item.dev.toString() + ":" + item.ino.toString() }
+                : { status: "unverifiable" };
+        }
+        if (!item.isDirectory()) return { status: "unverifiable" };
     }
 }
 
-async function inspectAddonSources(directory, manifestName, sdk, settings = {}, { repeatIncludes = true } = {}) {
+async function inspectAddonSources(directory, manifestName, sdk, settings = {}, { repeatIncludes = true, signal } = {}) {
+    checkCancellation(signal);
     const root = await fs.realpath(directory);
-    const manifest = await lookup(root, manifestName);
+    checkCancellation(signal);
+    const manifest = await lookup(root, manifestName, ".", signal);
     const result = { manifestStatus: manifest.status, notes: [], parserErrors: [], savedVariables: [], files: [], skippedTocEntries: 0 };
     if (manifest.status !== "found") return result;
 
     const manifestFile = path.join(directory, manifestName);
-    const text = decoder.decode(await fs.readFile(manifest.file));
+    const text = decoder.decode(await fs.readFile(manifest.file, { signal }));
+    checkCancellation(signal);
     const parsed = sdk.parseToc(text, manifestFile);
     result.parserErrors = parsed.diagnostics.filter(issue => issue.severity === "error");
     if (result.parserErrors.length) {
@@ -65,19 +82,21 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
     const expandedXml = new Set();
     const ancestors = new Set();
     const xmlCache = new Map();
-    const maxReportEntries = 10000;
+    const maxFileReferences = 10000;
 
     async function readXml(identity, physicalFile, displayFile) {
         if (xmlCache.has(identity)) return xmlCache.get(identity);
         const name = path.relative(directory, displayFile);
         let text;
         try {
-            text = decoder.decode(await fs.readFile(physicalFile));
+            text = decoder.decode(await fs.readFile(physicalFile, { signal }));
         } catch (error) {
+            checkCancellation(signal);
             result.notes.push(name + ": unable to read XML (" + (error.code || error.name) + ").");
             xmlCache.set(identity, undefined);
             return undefined;
         }
+        checkCancellation(signal);
         const analysis = sdk.analyzeXml(text, displayFile, { addonId: path.basename(directory), policy });
         if (!analysis.complete) {
             result.notes.push(name + ": incomplete XML analysis. See XML diagnostics for syntax or schema issues.");
@@ -88,20 +107,21 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
     }
 
     async function visit(kind, target, relativeDirectory, depth) {
+        checkCancellation(signal);
         if (result.truncated) return;
-        if (repeatIncludes && result.files.length >= maxReportEntries) {
+        if (result.files.length >= maxFileReferences) {
             result.truncated = true;
-            result.notes.push("Report stopped after " + maxReportEntries + " file references.");
+            result.notes.push("File reference check stopped after " + maxFileReferences + " entries.");
             return;
         }
-        const resolved = await lookup(root, target.value, relativeDirectory);
+        const resolved = await lookup(root, target.value, relativeDirectory, signal);
         const relativeFile = resolved.file && path.relative(root, resolved.file);
         const file = relativeFile && path.join(directory, relativeFile);
         const row = { kind, target, file, depth, status: resolved.status };
         result.files.push(row);
 
         if (!file || (kind !== "toc" && kind !== "include") || !/\.xml$/i.test(file)) return;
-        const identity = process.platform === "win32" ? resolved.file.toLowerCase() : resolved.file;
+        const identity = resolved.identity;
         if (ancestors.has(identity)) {
             row.status = "cycle";
             return;
@@ -116,6 +136,7 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
                 return;
             }
             for (const reference of references) {
+                checkCancellation(signal);
                 if (result.truncated) break;
                 await visit(reference.kind, reference.target, path.dirname(relativeFile), depth + 1);
             }
@@ -132,8 +153,8 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
     return result;
 }
 
-async function findFileReferenceProblems(directory, manifestName, sdk, report = () => {}, settings = {}) {
-    const result = await inspectAddonSources(directory, manifestName, sdk, settings, { repeatIncludes: false });
+async function findFileReferenceProblems(directory, manifestName, sdk, report = () => {}, settings = {}, options = {}) {
+    const result = await inspectAddonSources(directory, manifestName, sdk, settings, { ...options, repeatIncludes: false });
     for (const note of result.notes) report(note);
     const missingByFile = new Map();
     for (const { kind, target, status } of result.files) {
