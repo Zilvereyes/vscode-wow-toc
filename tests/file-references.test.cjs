@@ -3,9 +3,15 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
+const { Script } = require("node:vm");
 const { normalizeTocSelection } = require("../toc-client.cjs");
 const { findFileReferenceProblems, inspectAddonSources } = require("../xml-references.cjs");
 const sdk = require("../dist/sdk.cjs");
+
+test("extension entry point has valid syntax", async () => {
+    const source = await fs.readFile(path.join(__dirname, "../extension.cjs"), "utf8");
+    assert.doesNotThrow(() => new Script(source));
+});
 
 test("canonicalizes client and locale settings before TOC selection", () => {
     assert.deepEqual(normalizeTocSelection({ client: "retail", textLocale: "enUS" }), {
@@ -114,6 +120,30 @@ test("honors cancellation before file traversal", async () => {
         { name: "AbortError", message: "XML reference check cancelled." });
 });
 
+test("honors cancellation during file traversal", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-abort-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    await fs.writeFile(path.join(root, "Demo.toc"), "Root.xml\n");
+    const controller = new AbortController();
+    const cancellingSdk = { ...sdk, parseToc(...args) {
+        const parsed = sdk.parseToc(...args);
+        controller.abort();
+        return parsed;
+    } };
+    await assert.rejects(inspectAddonSources(root, "Demo.toc", cancellingSdk, {}, { signal: controller.signal }),
+        { name: "AbortError", message: "XML reference check cancelled." });
+});
+
+test("reports invalid XML text as unreadable", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-invalid-xml-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    await fs.writeFile(path.join(root, "Demo.toc"), "Root.xml\n");
+    await fs.writeFile(path.join(root, "Root.xml"), Buffer.from([0xff]));
+    const result = await inspectAddonSources(root, "Demo.toc", sdk);
+    assert.equal(result.files[0].status, "incomplete");
+    assert.match(result.notes[0], /^Root\.xml: unable to read XML/);
+});
+
 test("bounds automatic diagnostic traversal", async t => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-diagnostic-limit-"));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -123,7 +153,7 @@ test("bounds automatic diagnostic traversal", async t => {
     const result = await inspectAddonSources(root, "Demo.toc", sdk, {}, { repeatIncludes: false });
     assert.equal(result.files.length, 10000);
     assert.equal(result.truncated, true);
-    assert.deepEqual(result.notes, ["File reference check stopped after 10000 entries."]);
+    assert.deepEqual(result.notes, ["Reference check stopped after 10000 file references."]);
 });
 
 test("normalizes prefixed XML paths while preserving unprefixed whitespace", async t => {
@@ -169,4 +199,76 @@ test("returns the TOC parser error range and suppresses derived file warnings un
     const repaired = await check();
     assert.deepEqual(repaired.parserErrors, []);
     assert.equal(repaired.missingByFile[0].missing[0].target.value, "Missing.lua");
+});
+
+test("bounds automatic reference diagnostics without hiding earlier missing files", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-reference-limits-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const namespace = ' xmlns="http://www.blizzard.com/wow/ui/"';
+    await fs.writeFile(path.join(root, "Demo.toc"), "Root.xml\n");
+    await fs.writeFile(path.join(root, "Root.xml"), [
+        "<Ui" + namespace + ">",
+        '  <Script file="First.lua"/>',
+        '  <Script file="Second.lua"/>',
+        '  <Script file="Third.lua"/>',
+        "</Ui>",
+    ].join("\n"));
+
+    const parsedReferences = await findFileReferenceProblems(root, "Demo.toc", sdk, undefined, {},
+        { limits: { maxReferences: 2 } });
+    assert.deepEqual(parsedReferences.missingByFile, []);
+    assert.equal(parsedReferences.truncationMessage,
+        "Reference check stopped before retaining more than 2 parsed XML references.");
+
+    const referenceNotes = [];
+    const references = await findFileReferenceProblems(root, "Demo.toc", sdk,
+        note => referenceNotes.push(note), {}, { limits: { maxReferences: 3, maxDiagnostics: 10 } });
+    assert.deepEqual(references.missingByFile[0].missing.map(item => item.target.value),
+        ["First.lua", "Second.lua"]);
+    assert.equal(references.truncated, true);
+    assert.equal(references.truncationMessage, "Reference check stopped after 3 file references.");
+    assert.deepEqual(referenceNotes, [references.truncationMessage]);
+
+    const diagnosticNotes = [];
+    const diagnostics = await findFileReferenceProblems(root, "Demo.toc", sdk,
+        note => diagnosticNotes.push(note), {}, { limits: { maxDiagnostics: 3 } });
+    assert.deepEqual(diagnostics.missingByFile[0].missing.map(item => item.target.value),
+        ["First.lua", "Second.lua"]);
+    assert.equal(diagnostics.truncationMessage, "Reference diagnostics stopped at the 3 diagnostic limit.");
+    assert.deepEqual(diagnosticNotes, [diagnostics.truncationMessage]);
+});
+
+test("bounds XML files, depth, bytes, and cancelled scans", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-xml-limits-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const namespace = ' xmlns="http://www.blizzard.com/wow/ui/"';
+    const xml = entries => "<Ui" + namespace + ">\n" + entries.join("\n") + "\n</Ui>\n";
+    const manifestText = "Root.xml\n";
+    await fs.writeFile(path.join(root, "Demo.toc"), manifestText);
+    await fs.writeFile(path.join(root, "Root.xml"), xml(['  <Include file="Child.xml"/>']));
+    await fs.writeFile(path.join(root, "Child.xml"), xml(['  <Include file="Grandchild.xml"/>']));
+    await fs.writeFile(path.join(root, "Grandchild.xml"), xml([]));
+
+    const fileLimited = await inspectAddonSources(root, "Demo.toc", sdk, {},
+        { limits: { maxXmlFiles: 1 } });
+    assert.deepEqual(fileLimited.files.map(item => item.target.value), ["Root.xml"]);
+    assert.equal(fileLimited.truncationMessage, "Reference check stopped after 1 unique XML files.");
+
+    const depthLimited = await inspectAddonSources(root, "Demo.toc", sdk, {},
+        { limits: { maxDepth: 0 } });
+    assert.deepEqual(depthLimited.files.map(item => item.target.value), ["Root.xml"]);
+    assert.equal(depthLimited.truncationMessage, "Reference check stopped at the maximum XML depth of 0.");
+
+    const rootBytes = Buffer.byteLength(await fs.readFile(path.join(root, "Root.xml")));
+    const perFileLimited = await inspectAddonSources(root, "Demo.toc", sdk, {},
+        { limits: { maxFileBytes: rootBytes - 1 } });
+    assert.match(perFileLimited.truncationMessage, /byte per-file limit/);
+
+    const totalLimited = await inspectAddonSources(root, "Demo.toc", sdk, {},
+        { limits: { maxTotalBytes: Buffer.byteLength(manifestText) + rootBytes - 1 } });
+    assert.match(totalLimited.truncationMessage, /byte total-file limit/);
+
+    const cancelled = await findFileReferenceProblems(root, "Demo.toc", sdk, undefined, {},
+        { isCancelled: () => true });
+    assert.deepEqual(cancelled, { missingByFile: [], parserErrors: [], cancelled: true });
 });
