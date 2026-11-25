@@ -121,3 +121,75 @@ test("returns the TOC parser error range and suppresses derived file warnings un
     assert.deepEqual(repaired.parserErrors, []);
     assert.equal(repaired.missingByFile[0].missing[0].target.value, "Missing.lua");
 });
+
+test("bounds automatic reference diagnostics without hiding earlier missing files", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-reference-limits-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const namespace = ' xmlns="http://www.blizzard.com/wow/ui/"';
+    await fs.writeFile(path.join(root, "Demo.toc"), "Root.xml\n");
+    await fs.writeFile(path.join(root, "Root.xml"), [
+        "<Ui" + namespace + ">",
+        '  <Script file="First.lua"/>',
+        '  <Script file="Second.lua"/>',
+        '  <Script file="Third.lua"/>',
+        "</Ui>",
+    ].join("\n"));
+
+    const parsedReferences = await findFileReferenceProblems(root, "Demo.toc", sdk, undefined, {},
+        { limits: { maxReferences: 2 } });
+    assert.deepEqual(parsedReferences.missingByFile, []);
+    assert.equal(parsedReferences.truncationMessage,
+        "Reference check stopped before retaining more than 2 parsed XML references.");
+
+    const referenceNotes = [];
+    const references = await findFileReferenceProblems(root, "Demo.toc", sdk,
+        note => referenceNotes.push(note), {}, { limits: { maxReferences: 3, maxDiagnostics: 10 } });
+    assert.deepEqual(references.missingByFile[0].missing.map(item => item.target.value),
+        ["First.lua", "Second.lua"]);
+    assert.equal(references.truncated, true);
+    assert.equal(references.truncationMessage, "Reference check stopped after 3 file references.");
+    assert.deepEqual(referenceNotes, [references.truncationMessage]);
+
+    const diagnosticNotes = [];
+    const diagnostics = await findFileReferenceProblems(root, "Demo.toc", sdk,
+        note => diagnosticNotes.push(note), {}, { limits: { maxDiagnostics: 3 } });
+    assert.deepEqual(diagnostics.missingByFile[0].missing.map(item => item.target.value),
+        ["First.lua", "Second.lua"]);
+    assert.equal(diagnostics.truncationMessage, "Reference diagnostics stopped at the 3 diagnostic limit.");
+    assert.deepEqual(diagnosticNotes, [diagnostics.truncationMessage]);
+});
+
+test("bounds XML files, depth, bytes, and cancelled scans", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-xml-limits-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const namespace = ' xmlns="http://www.blizzard.com/wow/ui/"';
+    const xml = entries => "<Ui" + namespace + ">\n" + entries.join("\n") + "\n</Ui>\n";
+    const manifestText = "Root.xml\n";
+    await fs.writeFile(path.join(root, "Demo.toc"), manifestText);
+    await fs.writeFile(path.join(root, "Root.xml"), xml(['  <Include file="Child.xml"/>']));
+    await fs.writeFile(path.join(root, "Child.xml"), xml(['  <Include file="Grandchild.xml"/>']));
+    await fs.writeFile(path.join(root, "Grandchild.xml"), xml([]));
+
+    const fileLimited = await inspectAddonSources(root, "Demo.toc", sdk, {},
+        { limits: { maxXmlFiles: 1 } });
+    assert.deepEqual(fileLimited.files.map(item => item.target.value), ["Root.xml"]);
+    assert.equal(fileLimited.truncationMessage, "Reference check stopped after 1 unique XML files.");
+
+    const depthLimited = await inspectAddonSources(root, "Demo.toc", sdk, {},
+        { limits: { maxDepth: 0 } });
+    assert.deepEqual(depthLimited.files.map(item => item.target.value), ["Root.xml"]);
+    assert.equal(depthLimited.truncationMessage, "Reference check stopped at the maximum XML depth of 0.");
+
+    const rootBytes = Buffer.byteLength(await fs.readFile(path.join(root, "Root.xml")));
+    const perFileLimited = await inspectAddonSources(root, "Demo.toc", sdk, {},
+        { limits: { maxFileBytes: rootBytes - 1 } });
+    assert.match(perFileLimited.truncationMessage, /byte per-file limit/);
+
+    const totalLimited = await inspectAddonSources(root, "Demo.toc", sdk, {},
+        { limits: { maxTotalBytes: Buffer.byteLength(manifestText) + rootBytes - 1 } });
+    assert.match(totalLimited.truncationMessage, /byte total-file limit/);
+
+    const cancelled = await findFileReferenceProblems(root, "Demo.toc", sdk, undefined, {},
+        { isCancelled: () => true });
+    assert.deepEqual(cancelled, { missingByFile: [], parserErrors: [], cancelled: true });
+});

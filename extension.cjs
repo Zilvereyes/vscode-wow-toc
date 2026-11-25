@@ -76,47 +76,64 @@ function watchXmlReferences(folder, manifest, output) {
     const settings = { client: configuration.get(xmlClient), textLocale: configuration.get(xmlLocale) };
     let timer;
     let revision = 0;
+    let pending = Promise.resolve();
+    let disposed = false;
 
     function schedule() {
         const requested = ++revision;
         clearTimeout(timer);
-        timer = setTimeout(async () => {
-            const notes = [];
-            try {
-                const { missingByFile, parserErrors } = await findFileReferenceProblems(folder.uri.fsPath, manifestName,
-                    require("./dist/sdk.cjs"), message => notes.push(message), settings);
-                if (requested !== revision) return;
-                for (const note of notes) output.appendLine(folder.name + ": " + note);
-                const entries = missingByFile.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
-                    const { start, end } = reference.target.source.range;
-                    const range = new vscode.Range(start.line, start.column, end.line, end.column);
-                    const label = { include: "Include", script: "Script", toc: "TOC XML", "toc-lua": "TOC Lua" }[reference.kind];
-                    const warning = new vscode.Diagnostic(range,
-                        "Missing " + label + " file: " + reference.target.value, vscode.DiagnosticSeverity.Warning);
-                    warning.source = "Zilvereyes WoW TOC";
-                    warning.code = "WOWTOC001";
-                    return warning;
-                })]);
-                if (parserErrors.length) {
-                    entries.push([manifest, parserErrors.map(issue => {
+        timer = setTimeout(() => {
+            pending = pending.then(async () => {
+                if (disposed || requested !== revision) return;
+                const notes = [];
+                try {
+                    const cancelled = () => disposed || requested !== revision;
+                    const { missingByFile, parserErrors, truncationMessage } = await findFileReferenceProblems(
+                        folder.uri.fsPath, manifestName, require("./dist/sdk.cjs"),
+                        message => notes.push(message), settings, { isCancelled: cancelled });
+                    if (cancelled()) return;
+                    for (const note of notes) output.appendLine(folder.name + ": " + note);
+                    const entries = missingByFile.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
+                        const { start, end } = reference.target.source.range;
+                        const range = new vscode.Range(start.line, start.column, end.line, end.column);
+                        const label = { include: "Include", script: "Script", toc: "TOC XML", "toc-lua": "TOC Lua" }[reference.kind];
+                        const warning = new vscode.Diagnostic(range,
+                            "Missing " + label + " file: " + reference.target.value, vscode.DiagnosticSeverity.Warning);
+                        warning.source = "Zilvereyes WoW TOC";
+                        warning.code = "WOWTOC001";
+                        return warning;
+                    })]);
+                    const manifestDiagnostics = parserErrors.map(issue => {
                         const { start, end } = issue.source.range;
                         const range = new vscode.Range(start.line, start.column, end.line, end.column);
                         const diagnostic = new vscode.Diagnostic(range, issue.message, vscode.DiagnosticSeverity.Error);
                         diagnostic.source = "Zilvereyes WoW TOC";
                         diagnostic.code = issue.code;
                         return diagnostic;
-                    })]);
+                    });
+                    if (truncationMessage) {
+                        const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 0),
+                            truncationMessage, vscode.DiagnosticSeverity.Warning);
+                        diagnostic.source = "Zilvereyes WoW TOC";
+                        diagnostic.code = "WOWTOC002";
+                        manifestDiagnostics.push(diagnostic);
+                    }
+                    if (manifestDiagnostics.length) {
+                        const existing = entries.find(([uri]) => uri.toString() === manifest.toString());
+                        if (existing) existing[1].push(...manifestDiagnostics);
+                        else entries.push([manifest, manifestDiagnostics]);
+                    }
+                    const current = new Set(entries.map(([uri]) => uri.toString()));
+                    diagnostics.forEach(uri => {
+                        if (!current.has(uri.toString())) entries.push([uri, undefined]);
+                    });
+                    diagnostics.set(entries);
+                } catch (error) {
+                    if (cancelled()) return;
+                    diagnostics.clear();
+                    output.appendLine(folder.name + ": " + error.message);
                 }
-                const current = new Set(entries.map(([uri]) => uri.toString()));
-                diagnostics.forEach(uri => {
-                    if (!current.has(uri.toString())) entries.push([uri, undefined]);
-                });
-                diagnostics.set(entries);
-            } catch (error) {
-                if (requested !== revision) return;
-                diagnostics.clear();
-                output.appendLine(folder.name + ": " + error.message);
-            }
+            });
         }, 200);
     }
 
@@ -136,6 +153,7 @@ function watchXmlReferences(folder, manifest, output) {
     schedule();
     return {
         dispose() {
+            disposed = true;
             ++revision;
             clearTimeout(timer);
             for (const event of events) event.dispose();
