@@ -1,11 +1,23 @@
 const path = require("node:path");
 const vscode = require("vscode");
 const { inspectAddonSources } = require("./xml-references.cjs");
+const { normalizeTocSelection } = require("./toc-client.cjs");
 
 const command = "zilvereyes.wowToc.checkAddon";
 const scheme = "wow-toc-report";
 const labels = { toc: "TOC XML", "toc-lua": "TOC Lua", include: "Include", script: "Script" };
 const statuses = { unverifiable: "unverified", incomplete: "incomplete XML", cycle: "Include cycle" };
+const inlineControlPattern = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/u;
+const inlineControlsPattern = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/gu;
+
+function escapeInline(value) {
+    return value.replace(inlineControlsPattern, character =>
+        "\\u" + character.codePointAt(0).toString(16).toUpperCase().padStart(4, "0"));
+}
+
+function isSafeManifestName(name) {
+    return typeof name === "string" && /\.toc$/i.test(name) && !inlineControlPattern.test(name);
+}
 
 function sourceLink(source) {
     const { line, column } = source.range.start;
@@ -22,11 +34,12 @@ function buildReport(directory, manifest, settings, result) {
         let text = "";
         for (const part of parts) {
             if (typeof part === "string") {
-                text += part;
+                text += escapeInline(part);
             } else {
-                const range = new vscode.Range(lines.length, text.length, lines.length, text.length + part.text.length);
+                const display = escapeInline(part.text);
+                const range = new vscode.Range(lines.length, text.length, lines.length, text.length + display.length);
                 links.push(new vscode.DocumentLink(range, part.uri));
-                text += part.text;
+                text += display;
             }
         }
         lines.push(text);
@@ -34,8 +47,8 @@ function buildReport(directory, manifest, settings, result) {
 
     line("Check AddOn");
     line("Manifest  ", { text: relative(manifest.fsPath), uri: manifest });
-    line("Client    ", settings.client || "unspecified");
-    line("Locale    ", settings.textLocale || "unspecified");
+    line("Client    ", settings.invalidClient ? "invalid" : settings.client || "unspecified");
+    line("Locale    ", settings.invalidTextLocale ? "invalid" : settings.textLocale || "unspecified");
     line("");
     if (result.manifestStatus !== "found") {
         line("Manifest status  ", result.manifestStatus);
@@ -52,7 +65,7 @@ function buildReport(directory, manifest, settings, result) {
         line("Files in reference order");
         if (!result.files.length) line("  No active Lua or XML references");
         for (const [index, row] of result.files.entries()) {
-            const display = row.file ? relative(row.file) : row.target.value.replace(/[\r\n\t]/g, " ");
+            const display = row.file ? relative(row.file) : row.target.value;
             const state = statuses[row.status] ?? row.status;
             line("  " + (index + 1) + ". " + "  ".repeat(Math.min(row.depth, 8)),
                 row.file ? { text: display, uri: vscode.Uri.file(row.file) } : display,
@@ -134,13 +147,19 @@ function registerAddonCheck(context, config) {
                 const manifest = previous?.manifest ?? await pickManifest(folder, active, output, config);
                 if (!manifest) return;
                 const name = path.basename(manifest.fsPath);
+                if (!isSafeManifestName(name)) {
+                    throw new Error("The selected TOC filename contains unsupported control characters.");
+                }
                 const uri = vscode.Uri.from({ scheme, path: "/" + name + " - Check AddOn.txt", query: folder.uri.toString() });
                 const key = uri.toString();
                 const request = Symbol();
                 requests.set(key, request);
                 try {
                     const settings = vscode.workspace.getConfiguration(undefined, folder.uri);
-                    const selection = { client: settings.get(config.xmlClient), textLocale: settings.get(config.xmlLocale) };
+                    const selection = normalizeTocSelection({
+                        client: settings.get(config.xmlClient),
+                        textLocale: settings.get(config.xmlLocale),
+                    });
                     const result = await vscode.window.withProgress({
                         location: vscode.ProgressLocation.Window,
                         title: "Checking " + name,

@@ -3,8 +3,23 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
+const { normalizeTocSelection } = require("../toc-client.cjs");
 const { findFileReferenceProblems, inspectAddonSources } = require("../xml-references.cjs");
 const sdk = require("../dist/sdk.cjs");
+
+test("canonicalizes client and locale settings before TOC selection", () => {
+    assert.deepEqual(normalizeTocSelection({ client: "retail", textLocale: "enUS" }), {
+        client: "retail", textLocale: "enUS", invalidClient: false, invalidTextLocale: false,
+    });
+    assert.deepEqual(normalizeTocSelection({
+        client: "retail\nFiles in reference order", textLocale: "enUS\u2028Locale",
+    }), {
+        client: undefined, textLocale: undefined, invalidClient: true, invalidTextLocale: true,
+    });
+    assert.deepEqual(normalizeTocSelection({ client: "", textLocale: "" }), {
+        client: undefined, textLocale: undefined, invalidClient: false, invalidTextLocale: false,
+    });
+});
 
 test("checks active Lua entries in the manifest without traversing them as XML", async t => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-load-files-"));
