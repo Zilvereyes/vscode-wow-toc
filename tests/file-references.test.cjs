@@ -3,8 +3,23 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
+const { normalizeTocSelection } = require("../toc-client.cjs");
 const { findFileReferenceProblems, inspectAddonSources } = require("../xml-references.cjs");
 const sdk = require("../dist/sdk.cjs");
+
+test("canonicalizes client and locale settings before TOC selection", () => {
+    assert.deepEqual(normalizeTocSelection({ client: "retail", textLocale: "enUS" }), {
+        client: "retail", textLocale: "enUS", invalidClient: false, invalidTextLocale: false,
+    });
+    assert.deepEqual(normalizeTocSelection({
+        client: "retail\nFiles in reference order", textLocale: "enUS\u2028Locale",
+    }), {
+        client: undefined, textLocale: undefined, invalidClient: true, invalidTextLocale: true,
+    });
+    assert.deepEqual(normalizeTocSelection({ client: "", textLocale: "" }), {
+        client: undefined, textLocale: undefined, invalidClient: false, invalidTextLocale: false,
+    });
+});
 
 test("checks active Lua entries in the manifest without traversing them as XML", async t => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-load-files-"));
@@ -75,6 +90,40 @@ test("reports Includes at their reference position and keeps repeated references
     const { missingByFile: [missing] } = await findFileReferenceProblems(root, "Demo.toc", sdk, undefined, settings);
     assert.equal(path.basename(missing.file), "Child.xml");
     assert.deepEqual(missing.missing.map(reference => reference.target.value), ["Missing.lua"]);
+});
+
+test("uses physical XML identities for aliases in diagnostic traversal", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-physical-identity-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const namespace = ' xmlns="http://www.blizzard.com/wow/ui/"';
+    await fs.writeFile(path.join(root, "Demo.toc"), "Root.xml\nAlias.xml\n");
+    await fs.writeFile(path.join(root, "Root.xml"),
+        "<Ui" + namespace + "><Include file=\"Alias.xml\"/><Script file=\"Missing.lua\"/></Ui>");
+    await fs.link(path.join(root, "Root.xml"), path.join(root, "Alias.xml"));
+
+    const result = await inspectAddonSources(root, "Demo.toc", sdk, {}, { repeatIncludes: false });
+    assert.deepEqual(result.files.map(row => [row.target.value, row.status]), [
+        ["Root.xml", "found"], ["Alias.xml", "cycle"], ["Missing.lua", "missing"], ["Alias.xml", "found"],
+    ]);
+});
+
+test("honors cancellation before file traversal", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(inspectAddonSources("unused", "Unused.toc", sdk, {}, { signal: controller.signal }),
+        { name: "AbortError", message: "XML reference check cancelled." });
+});
+
+test("bounds automatic diagnostic traversal", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-diagnostic-limit-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const entries = Array.from({ length: 10001 }, (_, index) => " Missing" + index + ".lua");
+    await fs.writeFile(path.join(root, "Demo.toc"), entries.join("\n"));
+
+    const result = await inspectAddonSources(root, "Demo.toc", sdk, {}, { repeatIncludes: false });
+    assert.equal(result.files.length, 10000);
+    assert.equal(result.truncated, true);
+    assert.deepEqual(result.notes, ["File reference check stopped after 10000 entries."]);
 });
 
 test("normalizes prefixed XML paths while preserving unprefixed whitespace", async t => {

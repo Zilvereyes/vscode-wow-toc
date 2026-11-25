@@ -32,6 +32,7 @@ exports.run = async () => {
         const embeds = vscode.Uri.joinPath(folder.uri, "Embeds.xml");
         const config = () => vscode.workspace.getConfiguration("zilvereyes.wowToc", folder.uri);
         const setClient = name => config().update("xmlReferenceClient", name, vscode.ConfigurationTarget.Workspace);
+        const setLocale = name => config().update("xmlReferenceTextLocale", name, vscode.ConfigurationTarget.Workspace);
         await setClient("classic-era");
 
         async function reportFrom(file) {
@@ -79,14 +80,31 @@ exports.run = async () => {
         evidence.links = { count: reportLinks.length, nestedTarget: nestedLink.target.toString(),
             openedLine: editor.selection.active.line + 1 };
 
+        await setClient("retail\n  1. forged.lua  [TOC Lua, found]");
+        await setLocale("enUS\u2028forged locale");
+        const invalid = await reportFrom(report);
+        assert.match(invalid.getText(), /Client +invalid/);
+        assert.match(invalid.getText(), /Locale +invalid/);
+        assert.doesNotMatch(invalid.getText(), /forged/);
+        await setClient("classic-era");
+        await setLocale("");
+
         const originalToc = await fs.readFile(toc.fsPath);
         const marker = "CheckAddon[Family]Missing.lua [AllowLoadGameType vanilla]";
+        const bidiMarker = "Bidirectional\u202eRow.lua";
+        const bidiFile = vscode.Uri.joinPath(folder.uri, bidiMarker);
         try {
-            await fs.appendFile(toc.fsPath, "\n" + marker + "\n");
+            await fs.writeFile(bidiFile.fsPath, "return\n");
+            await fs.appendFile(toc.fsPath, "\n" + marker + "\n" + bidiMarker + "\n");
             const era = await reportFrom(report);
             assert.equal(era.uri.toString(), report.uri.toString());
             const warning = "CheckAddonClassicMissing.lua  [TOC Lua, missing]";
             await waitFor(() => era.getText().includes(warning), "Classic Era missing-file row");
+            assert.match(era.getText(), /Bidirectional\\u202ERow\.lua +\[TOC Lua, found\]/);
+            assert.doesNotMatch(era.getText(), /\u202e/);
+            const bidiLink = await waitFor(async () => (await links())
+                .find(link => era.getText(link.range) === "Bidirectional\\u202ERow.lua"), "escaped bidi filename link");
+            assert.equal(bidiLink.target.fsPath, bidiFile.fsPath);
             evidence.classicMissing = era.getText().split("\n").find(row => row.includes(warning));
             await setClient("retail");
             const retail = await reportFrom(lua);
@@ -96,6 +114,7 @@ exports.run = async () => {
             evidence.restoredToc = true;
         } finally {
             await fs.writeFile(toc.fsPath, originalToc);
+            await fs.rm(bidiFile.fsPath, { force: true });
         }
     } catch (error) {
         evidence.error = error.stack;

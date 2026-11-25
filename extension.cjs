@@ -1,8 +1,8 @@
 const vscode = require("vscode");
 const path = require("node:path");
-const { randomUUID } = require("node:crypto");
 const { TextDecoder, TextEncoder } = require("node:util");
 const { generateSavedVariables, generatedHeader } = require("./saved-variables.cjs");
+const { readSavedVariablesFile, replaceSavedVariablesFile } = require("./saved-variables-file.cjs");
 
 const { findFileReferenceProblems } = require("./xml-references.cjs");
 const { registerAddonCheck } = require("./check-addon.cjs");
@@ -25,16 +25,14 @@ function selectedManifest(folder, output, key = setting) {
 }
 
 async function updateEditorGlobals(folder, manifest, output) {
+    if (folder.uri.scheme !== "file") {
+        throw new Error("SavedVariables generation requires a local file workspace.");
+    }
     const source = decoder.decode(await vscode.workspace.fs.readFile(manifest));
     const result = generateSavedVariables(manifest.fsPath, source, require("./dist/sdk.cjs"));
-    const library = vscode.Uri.joinPath(folder.uri, "Editor", "LuaLS");
-    const target = vscode.Uri.joinPath(library, "SavedVariables.lua");
-    let previousBytes;
-    try {
-        previousBytes = await vscode.workspace.fs.readFile(target);
-    } catch (error) {
-        if (error.code !== "FileNotFound") throw error;
-    }
+    const current = await readSavedVariablesFile(folder.uri.fsPath);
+    const target = vscode.Uri.joinPath(folder.uri, "Editor", "LuaLS", "SavedVariables.lua");
+    const previousBytes = current.bytes;
     const previous = previousBytes === undefined ? undefined : decoder.decode(previousBytes);
     const normalized = previous?.replace(/\r\n/g, "\n");
     if (normalized === result.text) return;
@@ -42,27 +40,18 @@ async function updateEditorGlobals(folder, manifest, output) {
         throw new Error("Editor/LuaLS/SavedVariables.lua already contains a hand-written file.");
     }
     if (previous === undefined) {
-        await vscode.workspace.fs.createDirectory(library);
-        await vscode.workspace.fs.writeFile(target, encoder.encode(result.text));
+        await replaceSavedVariablesFile(folder.uri.fsPath, undefined, encoder.encode(result.text));
     } else {
-        // LuaLS's default workspace diagnostics refresh on a Lua document save.
         const document = await vscode.workspace.openTextDocument(target);
         if (document.isDirty || document.getText().replace(/\r\n/g, "\n") !== normalized) {
             throw new Error("The generated editor file changed during synchronization.");
         }
         const version = document.version;
-        const backup = target.with({ path: target.path + "." + randomUUID() + ".bak" });
-        await vscode.workspace.fs.copy(target, backup, { overwrite: false });
-        const disk = await vscode.workspace.fs.readFile(target);
+        const disk = (await readSavedVariablesFile(folder.uri.fsPath)).bytes;
         if (document.isDirty || document.version !== version || !Buffer.from(disk).equals(previousBytes)) {
             throw new Error("The generated editor file changed during synchronization.");
         }
-        const range = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
-        const edit = new vscode.WorkspaceEdit();
-        edit.replace(target, range, result.text);
-        if (!await vscode.workspace.applyEdit(edit) || !await document.save()) {
-            throw new Error("Unable to save the generated editor file.");
-        }
+        await replaceSavedVariablesFile(folder.uri.fsPath, previousBytes, encoder.encode(result.text));
     }
     output.appendLine(folder.name + ": " + result.names.length + " globals from " + manifest.path.split("/").pop());
     if (result.conditional) output.appendLine("Conditional declarations awaiting client selection: " + result.conditional);
@@ -76,34 +65,34 @@ function watchXmlReferences(folder, manifest, output) {
     const settings = { client: configuration.get(xmlClient), textLocale: configuration.get(xmlLocale) };
     let timer;
     let revision = 0;
-    let pending = Promise.resolve();
-    let disposed = false;
+    let controller;
 
     function schedule() {
         const requested = ++revision;
         clearTimeout(timer);
-        timer = setTimeout(() => {
-            pending = pending.then(async () => {
-                if (disposed || requested !== revision) return;
-                const notes = [];
-                try {
-                    const cancelled = () => disposed || requested !== revision;
-                    const { missingByFile, parserErrors, truncationMessage } = await findFileReferenceProblems(
-                        folder.uri.fsPath, manifestName, require("./dist/sdk.cjs"),
-                        message => notes.push(message), settings, { isCancelled: cancelled });
-                    if (cancelled()) return;
-                    for (const note of notes) output.appendLine(folder.name + ": " + note);
-                    const entries = missingByFile.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
-                        const { start, end } = reference.target.source.range;
-                        const range = new vscode.Range(start.line, start.column, end.line, end.column);
-                        const label = { include: "Include", script: "Script", toc: "TOC XML", "toc-lua": "TOC Lua" }[reference.kind];
-                        const warning = new vscode.Diagnostic(range,
-                            "Missing " + label + " file: " + reference.target.value, vscode.DiagnosticSeverity.Warning);
-                        warning.source = "Zilvereyes WoW TOC";
-                        warning.code = "WOWTOC001";
-                        return warning;
-                    })]);
-                    const manifestDiagnostics = parserErrors.map(issue => {
+        controller?.abort();
+        const currentController = new AbortController();
+        controller = currentController;
+        timer = setTimeout(async () => {
+            const notes = [];
+            try {
+                const { missingByFile, parserErrors } = await findFileReferenceProblems(folder.uri.fsPath, manifestName,
+                    require("./dist/sdk.cjs"), message => notes.push(message), settings,
+                    { signal: currentController.signal });
+                if (requested !== revision) return;
+                for (const note of notes) output.appendLine(folder.name + ": " + note);
+                const entries = missingByFile.map(({ file, missing }) => [vscode.Uri.file(file), missing.map(reference => {
+                    const { start, end } = reference.target.source.range;
+                    const range = new vscode.Range(start.line, start.column, end.line, end.column);
+                    const label = { include: "Include", script: "Script", toc: "TOC XML", "toc-lua": "TOC Lua" }[reference.kind];
+                    const warning = new vscode.Diagnostic(range,
+                        "Missing " + label + " file: " + reference.target.value, vscode.DiagnosticSeverity.Warning);
+                    warning.source = "Zilvereyes WoW TOC";
+                    warning.code = "WOWTOC001";
+                    return warning;
+                })]);
+                if (parserErrors.length) {
+                    entries.push([manifest, parserErrors.map(issue => {
                         const { start, end } = issue.source.range;
                         const range = new vscode.Range(start.line, start.column, end.line, end.column);
                         const diagnostic = new vscode.Diagnostic(range, issue.message, vscode.DiagnosticSeverity.Error);
@@ -133,7 +122,18 @@ function watchXmlReferences(folder, manifest, output) {
                     diagnostics.clear();
                     output.appendLine(folder.name + ": " + error.message);
                 }
-            });
+                const current = new Set(entries.map(([uri]) => uri.toString()));
+                diagnostics.forEach(uri => {
+                    if (!current.has(uri.toString())) entries.push([uri, undefined]);
+                });
+                diagnostics.set(entries);
+            } catch (error) {
+                if (requested !== revision) return;
+                diagnostics.clear();
+                output.appendLine(folder.name + ": " + error.message);
+            } finally {
+                if (controller === currentController) controller = undefined;
+            }
         }, 200);
     }
 
@@ -156,6 +156,8 @@ function watchXmlReferences(folder, manifest, output) {
             disposed = true;
             ++revision;
             clearTimeout(timer);
+            controller?.abort();
+            controller = undefined;
             for (const event of events) event.dispose();
             watcher.dispose();
             diagnostics.dispose();
