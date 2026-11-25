@@ -76,8 +76,11 @@ async function lookup(root, value, relativeDirectory = ".", signal) {
     }
 }
 
-async function inspectAddonSources(directory, manifestName, sdk, settings = {}, { repeatIncludes = true, signal } = {}) {
+async function inspectAddonSources(directory, manifestName, sdk, settings = {}, options = {}) {
+    const { repeatIncludes = true, signal, isCancelled = () => false } = options;
+    const limits = securityLimits(options.limits);
     checkCancellation(signal);
+    if (isCancelled()) return { manifestStatus: "cancelled", notes: [], parserErrors: [], savedVariables: [], files: [], skippedTocEntries: 0, cancelled: true };
     const root = await fs.realpath(directory);
     checkCancellation(signal);
     const manifest = await lookup(root, manifestName, ".", signal);
@@ -91,6 +94,7 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
     let totalBytes = 0;
 
     function continueScan() {
+        checkCancellation(signal);
         if (!result.cancelled && isCancelled()) result.cancelled = true;
         return !result.cancelled && !result.truncated;
     }
@@ -147,8 +151,8 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
     }
 
     const manifestFile = path.join(directory, manifestName);
-    const text = decoder.decode(await fs.readFile(manifest.file, { signal }));
-    checkCancellation(signal);
+    const text = await readText(manifest.file, manifestFile);
+    if (text === undefined) return result;
     const parsed = sdk.parseToc(text, manifestFile);
     if (!continueScan()) return result;
     result.parserErrors = parsed.diagnostics.filter(issue => issue.severity === "error");
@@ -164,21 +168,22 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
     const expandedXml = new Set();
     const ancestors = new Set();
     const xmlCache = new Map();
-    const maxFileReferences = 10000;
+    const maxReportEntries = 10000;
+    let parsedXmlReferences = 0;
 
     async function readXml(identity, physicalFile, displayFile) {
         if (xmlCache.has(identity)) return xmlCache.get(identity);
         const name = path.relative(directory, displayFile);
         let text;
         try {
-            text = decoder.decode(await fs.readFile(physicalFile, { signal }));
+            text = await readText(physicalFile, displayFile);
         } catch (error) {
             checkCancellation(signal);
             result.notes.push(name + ": unable to read XML (" + (error.code || error.name) + ").");
             xmlCache.set(identity, undefined);
             return undefined;
         }
-        checkCancellation(signal);
+        if (text === undefined) return undefined;
         const analysis = sdk.analyzeXml(text, displayFile, { addonId: path.basename(directory), policy });
         if (!continueScan()) return undefined;
         if (!analysis.complete) {
@@ -196,20 +201,28 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
     }
 
     async function visit(kind, target, relativeDirectory, depth) {
-        checkCancellation(signal);
-        if (result.truncated) return;
-        if (result.files.length >= maxFileReferences) {
-            result.truncated = true;
-            result.notes.push("File reference check stopped after " + maxFileReferences + " entries.");
+        if (!continueScan()) return;
+        if (repeatIncludes && result.files.length >= maxReportEntries) {
+            truncate(result, "Report stopped after " + maxReportEntries + " file references.");
+            return;
+        }
+        if (result.files.length >= limits.maxReferences) {
+            truncate(result, "Reference check stopped after " + limits.maxReferences + " file references.");
+            return;
+        }
+        if (depth > limits.maxDepth) {
+            truncate(result, "Reference check stopped at the maximum XML depth of " + limits.maxDepth + ".");
             return;
         }
         const resolved = await lookup(root, target.value, relativeDirectory, signal);
+        if (!continueScan()) return;
         const relativeFile = resolved.file && path.relative(root, resolved.file);
         const file = relativeFile && path.join(directory, relativeFile);
         const row = { kind, target, file, depth, status: resolved.status };
-        result.files.push(row);
-
-        if (!file || (kind !== "toc" && kind !== "include") || !/\.xml$/i.test(file)) return;
+        if (!file || (kind !== "toc" && kind !== "include") || !/\.xml$/i.test(file)) {
+            result.files.push(row);
+            return;
+        }
         const identity = resolved.identity;
         if (ancestors.has(identity)) {
             row.status = "cycle";
@@ -235,8 +248,7 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
                 return;
             }
             for (const reference of references) {
-                checkCancellation(signal);
-                if (result.truncated) break;
+                if (!continueScan()) break;
                 await visit(reference.kind, reference.target, path.dirname(relativeFile), depth + 1);
             }
         } finally {
@@ -253,8 +265,14 @@ async function inspectAddonSources(directory, manifestName, sdk, settings = {}, 
 }
 
 async function findFileReferenceProblems(directory, manifestName, sdk, report = () => {}, settings = {}, options = {}) {
-    const result = await inspectAddonSources(directory, manifestName, sdk, settings, { ...options, repeatIncludes: false });
-    for (const note of result.notes) report(note);
+    const limits = securityLimits(options.limits);
+    const result = await inspectAddonSources(directory, manifestName, sdk, settings, { ...options, repeatIncludes: false, limits });
+    if (result.cancelled) return { missingByFile: [], parserErrors: [], cancelled: true };
+    const maxProblemDiagnostics = Math.max(0, limits.maxDiagnostics - 1);
+    const parserErrors = result.parserErrors.slice(0, maxProblemDiagnostics);
+    if (parserErrors.length !== result.parserErrors.length) {
+        truncate(result, "Reference diagnostics stopped at the " + limits.maxDiagnostics + " diagnostic limit.");
+    }
     const missingByFile = new Map();
     let diagnosticCount = parserErrors.length;
     for (const { kind, target, status } of result.files) {

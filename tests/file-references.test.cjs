@@ -3,9 +3,15 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
+const { Script } = require("node:vm");
 const { normalizeTocSelection } = require("../toc-client.cjs");
 const { findFileReferenceProblems, inspectAddonSources } = require("../xml-references.cjs");
 const sdk = require("../dist/sdk.cjs");
+
+test("extension entry point has valid syntax", async () => {
+    const source = await fs.readFile(path.join(__dirname, "../extension.cjs"), "utf8");
+    assert.doesNotThrow(() => new Script(source));
+});
 
 test("canonicalizes client and locale settings before TOC selection", () => {
     assert.deepEqual(normalizeTocSelection({ client: "retail", textLocale: "enUS" }), {
@@ -114,6 +120,30 @@ test("honors cancellation before file traversal", async () => {
         { name: "AbortError", message: "XML reference check cancelled." });
 });
 
+test("honors cancellation during file traversal", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-abort-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    await fs.writeFile(path.join(root, "Demo.toc"), "Root.xml\n");
+    const controller = new AbortController();
+    const cancellingSdk = { ...sdk, parseToc(...args) {
+        const parsed = sdk.parseToc(...args);
+        controller.abort();
+        return parsed;
+    } };
+    await assert.rejects(inspectAddonSources(root, "Demo.toc", cancellingSdk, {}, { signal: controller.signal }),
+        { name: "AbortError", message: "XML reference check cancelled." });
+});
+
+test("reports invalid XML text as unreadable", async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-invalid-xml-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    await fs.writeFile(path.join(root, "Demo.toc"), "Root.xml\n");
+    await fs.writeFile(path.join(root, "Root.xml"), Buffer.from([0xff]));
+    const result = await inspectAddonSources(root, "Demo.toc", sdk);
+    assert.equal(result.files[0].status, "incomplete");
+    assert.match(result.notes[0], /^Root\.xml: unable to read XML/);
+});
+
 test("bounds automatic diagnostic traversal", async t => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "wow-toc-diagnostic-limit-"));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -123,7 +153,7 @@ test("bounds automatic diagnostic traversal", async t => {
     const result = await inspectAddonSources(root, "Demo.toc", sdk, {}, { repeatIncludes: false });
     assert.equal(result.files.length, 10000);
     assert.equal(result.truncated, true);
-    assert.deepEqual(result.notes, ["File reference check stopped after 10000 entries."]);
+    assert.deepEqual(result.notes, ["Reference check stopped after 10000 file references."]);
 });
 
 test("normalizes prefixed XML paths while preserving unprefixed whitespace", async t => {

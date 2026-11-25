@@ -76,7 +76,7 @@ function watchXmlReferences(folder, manifest, output) {
         timer = setTimeout(async () => {
             const notes = [];
             try {
-                const { missingByFile, parserErrors } = await findFileReferenceProblems(folder.uri.fsPath, manifestName,
+                const { missingByFile, parserErrors, truncationMessage } = await findFileReferenceProblems(folder.uri.fsPath, manifestName,
                     require("./dist/sdk.cjs"), message => notes.push(message), settings,
                     { signal: currentController.signal });
                 if (requested !== revision) return;
@@ -91,36 +91,25 @@ function watchXmlReferences(folder, manifest, output) {
                     warning.code = "WOWTOC001";
                     return warning;
                 })]);
-                if (parserErrors.length) {
-                    entries.push([manifest, parserErrors.map(issue => {
-                        const { start, end } = issue.source.range;
-                        const range = new vscode.Range(start.line, start.column, end.line, end.column);
-                        const diagnostic = new vscode.Diagnostic(range, issue.message, vscode.DiagnosticSeverity.Error);
-                        diagnostic.source = "Zilvereyes WoW TOC";
-                        diagnostic.code = issue.code;
-                        return diagnostic;
-                    });
-                    if (truncationMessage) {
-                        const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 0),
-                            truncationMessage, vscode.DiagnosticSeverity.Warning);
-                        diagnostic.source = "Zilvereyes WoW TOC";
-                        diagnostic.code = "WOWTOC002";
-                        manifestDiagnostics.push(diagnostic);
-                    }
-                    if (manifestDiagnostics.length) {
-                        const existing = entries.find(([uri]) => uri.toString() === manifest.toString());
-                        if (existing) existing[1].push(...manifestDiagnostics);
-                        else entries.push([manifest, manifestDiagnostics]);
-                    }
-                    const current = new Set(entries.map(([uri]) => uri.toString()));
-                    diagnostics.forEach(uri => {
-                        if (!current.has(uri.toString())) entries.push([uri, undefined]);
-                    });
-                    diagnostics.set(entries);
-                } catch (error) {
-                    if (cancelled()) return;
-                    diagnostics.clear();
-                    output.appendLine(folder.name + ": " + error.message);
+                const manifestDiagnostics = parserErrors.map(issue => {
+                    const { start, end } = issue.source.range;
+                    const range = new vscode.Range(start.line, start.column, end.line, end.column);
+                    const diagnostic = new vscode.Diagnostic(range, issue.message, vscode.DiagnosticSeverity.Error);
+                    diagnostic.source = "Zilvereyes WoW TOC";
+                    diagnostic.code = issue.code;
+                    return diagnostic;
+                });
+                if (truncationMessage) {
+                    const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 0),
+                        truncationMessage, vscode.DiagnosticSeverity.Warning);
+                    diagnostic.source = "Zilvereyes WoW TOC";
+                    diagnostic.code = "WOWTOC002";
+                    manifestDiagnostics.push(diagnostic);
+                }
+                if (manifestDiagnostics.length) {
+                    const existing = entries.find(([uri]) => uri.toString() === manifest.toString());
+                    if (existing) existing[1].push(...manifestDiagnostics);
+                    else entries.push([manifest, manifestDiagnostics]);
                 }
                 const current = new Set(entries.map(([uri]) => uri.toString()));
                 diagnostics.forEach(uri => {
