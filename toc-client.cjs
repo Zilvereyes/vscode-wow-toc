@@ -11,6 +11,17 @@ const gameTypes = new Set([...clients.values()].flat().map(value => value.toLowe
 const localePattern = /^[a-z]{2}[A-Z]{2}$/;
 const gameDirectives = new Set(["allowloadgametype", "excludeloadgametype"]);
 
+function normalizeTocSelection({ client, textLocale } = {}) {
+    const validClient = typeof client === "string" && clients.has(client);
+    const validTextLocale = typeof textLocale === "string" && localePattern.test(textLocale);
+    return {
+        client: validClient ? client : undefined,
+        textLocale: validTextLocale ? textLocale : undefined,
+        invalidClient: client !== undefined && client !== "" && !validClient,
+        invalidTextLocale: textLocale !== undefined && textLocale !== "" && !validTextLocale,
+    };
+}
+
 function isActive(condition, family, game, locale) {
     const values = condition.values;
     if (!values.length) return false;
@@ -28,9 +39,9 @@ function isActive(condition, family, game, locale) {
     return name === "allowloadgametype" ? matches : !matches;
 }
 
-function selectTocFileEntries({ metadata, entries }, { client, textLocale }) {
+function selectTocFileEntries({ metadata, entries }, settings) {
+    const { client, textLocale: locale } = normalizeTocSelection(settings);
     const [family, game] = clients.get(client) ?? [];
-    const locale = typeof textLocale === "string" && localePattern.test(textLocale) ? textLocale : undefined;
 
     // Repeated unqualified game-type declarations append their allowed or excluded values.
     const manifestConditions = new Map();
@@ -64,5 +75,5 @@ function selectTocFileEntries({ metadata, entries }, { client, textLocale }) {
     return selected;
 }
 
-module.exports = { selectTocFileEntries };
+module.exports = { normalizeTocSelection, selectTocFileEntries };
 
