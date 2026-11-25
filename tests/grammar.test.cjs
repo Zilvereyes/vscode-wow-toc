@@ -38,6 +38,8 @@ test("valid and invalid metadata use separate markers", () => {
     expectScope("## RequiredDeps: Core", "RequiredDeps", "entity.name.tag.toc");
     expectScope("## Secure: 1", "Secure", "entity.name.tag.restricted.toc");
     expectScope("## NotAField: example", "##", "invalid.illegal.metadata-marker.toc");
+    expectScope("## Husk at jeg skal være rød!", "##", "invalid.illegal.metadata-marker.toc");
+    expectScope("## Husk at jeg skal være rød!", "Husk", "invalid.illegal.metadata.toc");
     expectScope("# Normal comment", "#", "comment.line.number-sign.toc");
 });
 
@@ -63,6 +65,7 @@ test("conditions and file variables work in the same file entry", () => {
     expectScope(suffix, "enUS", "string.unquoted.conditional-value.toc");
     expectScope("Docs/Core.lua", "/", "invalid.path.separator.toc");
     expectScope("Docs\\Core.lua", "\\", "constant.character.path.separator.good.toc");
+    expectScope("\\", "\\", "constant.character.path.separator.good.toc");
     expectScope("[Other]\\Core.lua", "Other", "entity.name.file.toc");
     expectScope("## Notes: [Game] and [AllowLoadGameType classic]", "[Game]", "string.value.toc");
 });
@@ -73,9 +76,11 @@ test("WoW colors, texture and atlas tokens coexist without leaking to the next l
     expectScope(line, "GREEN_FONT_COLOR", "support.constant.globalcolor.toc");
     expectScope(line, "3:Rare", "constant.numeric.itemquality.toc");
     expectScope(line, "|n", "constant.character.escape.toc");
-    const media = "## Notes: |TInterface\\\\Icons\\\\Foo:16:24|t |A:common-icon-checkmark:16:24|a";
+    const media = "## Notes: |TInterface\\Icons\\Foo:16:24|t |A:common-icon-checkmark:16:24|a";
+    expectScope(media, "\\", "constant.character.path.separator.good.toc");
     expectScope(media, "Foo", "support.constant.texture.toc");
     expectScope(media, "16:24", "constant.numeric.texture.toc");
+    expectScope("## Notes: |TInterface/Icons/Foo:16:24|t", "/", "invalid.path.separator.toc");
     expectScope(media, "common-icon-checkmark", "string.unquoted.atlas-name.toc");
     expectScope(media, "|a", "constant.character.escape.toc");
     const state = expectScope("## Notes: |cFF66CCFFunfinished", "unfinished", "string.value.toc");
@@ -91,6 +96,7 @@ test("theme contributes the recovered TOC palette to emitted scopes", () => {
     for (const [scope, value] of Object.entries({
         "punctuation.definition.metadata.toc": "#66CCFF",
         "invalid.illegal.metadata-marker.toc": "#F44747",
+        "invalid.illegal.metadata.toc": "#F44747",
         "entity.name.tag.toc": "#99FF99",
         "entity.name.tag.variable.toc": "#66CCFF",
         "entity.name.tag.localized-code.toc": "#4A7DFF",
@@ -106,7 +112,9 @@ test("theme contributes the recovered TOC palette to emitted scopes", () => {
         ["## Title-deDE: ZilverUI", "deDE", "#4A7DFF"],
         ["## Invalid: value", "##", "#F44747"],
         ["Libs\\Core-[Family].lua", "\\", "#C586C0"],
+        ["\\", "\\", "#C586C0"],
         ["Libs\\Core-[Family].lua", "Family", "#66CCFF"],
+        ["## Notes: |TInterface\\Icons\\Foo:16:24|t", "\\", "#C586C0"],
     ]) {
         const column = line.indexOf(word);
         const { tokens } = grammar.tokenizeLine2(line, INITIAL);
@@ -120,3 +128,4 @@ test("theme contributes the recovered TOC palette to emitted scopes", () => {
         }
     }
 });
+
